@@ -51,7 +51,8 @@ async def stream_agent_events(agent: Any, message: str, thread_id: str) -> Async
         sa_name = str(args.get("subagent_type", "")).strip()
         if not sa_name:
             # Fallback to description snippet (may be empty during streaming)
-            sa_name = desc[:30] + "..." if len(desc) > 30 else desc
+            sa_name = desc.split("\n")[0].strip()
+            sa_name = sa_name[:30] + "\u2026" if len(sa_name) > 30 else sa_name
         if not sa_name:
             sa_name = "sub-agent"
 

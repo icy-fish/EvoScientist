@@ -114,7 +114,7 @@ def format_tool_compact(name: str, args: dict | None) -> str:
     if name_lower == "execute":
         cmd = args.get("command", "")
         if len(cmd) > 50:
-            cmd = cmd[:47] + "..."
+            cmd = cmd[:47] + "\u2026"
         return f"execute({cmd})"
 
     # File operations
@@ -134,14 +134,14 @@ def format_tool_compact(name: str, args: dict | None) -> str:
     if name_lower == "glob":
         pattern = args.get("pattern", "")
         if len(pattern) > 40:
-            pattern = pattern[:37] + "..."
+            pattern = pattern[:37] + "\u2026"
         return f"glob({pattern})"
 
     if name_lower == "grep":
         pattern = args.get("pattern", "")
         path = args.get("path", ".")
         if len(pattern) > 30:
-            pattern = pattern[:27] + "..."
+            pattern = pattern[:27] + "\u2026"
         return f"grep({pattern}, {path})"
 
     # Directory listing
@@ -163,16 +163,17 @@ def format_tool_compact(name: str, args: dict | None) -> str:
     if name_lower == "task":
         sa_type = args.get("subagent_type", "").strip()
         task_desc = args.get("description", args.get("task", "")).strip()
+        task_desc = task_desc.split("\n")[0].strip() if task_desc else ""
         if sa_type:
             if task_desc:
                 if len(task_desc) > 50:
-                    task_desc = task_desc[:47] + "..."
+                    task_desc = task_desc[:47] + "\u2026"
                 return f"Cooking with {sa_type} — {task_desc}"
             return f"Cooking with {sa_type}"
         # Fallback if no subagent_type
         if task_desc:
             if len(task_desc) > 50:
-                task_desc = task_desc[:47] + "..."
+                task_desc = task_desc[:47] + "\u2026"
             return f"Cooking with sub-agent — {task_desc}"
         return "Cooking with sub-agent"
 
@@ -185,14 +186,14 @@ def format_tool_compact(name: str, args: dict | None) -> str:
     if name_lower in ("tavily_search", "internet_search"):
         query = args.get("query", "")
         if len(query) > 40:
-            query = query[:37] + "..."
+            query = query[:37] + "\u2026"
         return f"{name}({query})"
 
     # Think/reflection
     if name_lower == "think_tool":
         reflection = args.get("reflection", "")
         if len(reflection) > 40:
-            reflection = reflection[:37] + "..."
+            reflection = reflection[:37] + "\u2026"
         return f"think_tool({reflection})"
 
     # Default: show first few params
@@ -200,12 +201,12 @@ def format_tool_compact(name: str, args: dict | None) -> str:
     for k, v in list(args.items())[:2]:
         v_str = str(v)
         if len(v_str) > 20:
-            v_str = v_str[:17] + "..."
+            v_str = v_str[:17] + "\u2026"
         params.append(f"{k}={v_str}")
 
     params_str = ", ".join(params)
     if len(params_str) > 50:
-        params_str = params_str[:47] + "..."
+        params_str = params_str[:47] + "\u2026"
 
     return f"{name}({params_str})"
 

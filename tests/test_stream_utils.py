@@ -51,7 +51,7 @@ class TestFormatToolCompact:
         long_cmd = "x" * 60
         result = format_tool_compact("execute", {"command": long_cmd})
         assert len(result) < 70
-        assert result.endswith("...)")
+        assert result.endswith("\u2026)")
 
     def test_read_file(self):
         result = format_tool_compact("read_file", {"path": "src/main.py"})
@@ -128,7 +128,7 @@ class TestFormatToolCompact:
 
     def test_unknown_tool_long_value(self):
         result = format_tool_compact("custom_tool", {"key": "a" * 30})
-        assert "..." in result
+        assert "\u2026" in result
 
 
 # === truncate ===

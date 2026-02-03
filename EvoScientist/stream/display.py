@@ -62,7 +62,7 @@ def _format_single_todo(item: dict) -> Text:
     line.append(" ", style="dim")
     # Truncate long content
     if len(content_text) > 60:
-        content_text = content_text[:57] + "..."
+        content_text = content_text[:57] + "\u2026"
     line.append(content_text, style=style)
     return line
 
@@ -110,7 +110,7 @@ def format_tool_result_compact(_name: str, content: str, max_lines: int = 5) -> 
     for i, line in enumerate(display_lines):
         prefix = "\u2514" if i == 0 else " "
         if len(line) > 80:
-            line = line[:77] + "..."
+            line = line[:77] + "\u2026"
         style = "dim" if is_success(content) else "red dim"
         elements.append(Text(f"  {prefix} {line}", style=style))
 
@@ -184,7 +184,8 @@ def _render_subagent_section(sa: 'SubAgentState', compact: bool = False) -> list
     # Build display name
     display_name = f"Cooking with {sa.name}"
     if sa.description:
-        desc = sa.description[:50] + "..." if len(sa.description) > 50 else sa.description
+        desc = sa.description.split("\n")[0].strip()
+        desc = desc[:50] + "\u2026" if len(desc) > 50 else desc
         display_name += f" \u2014 {desc}"
 
     # --- Compact mode: 1-line summary for completed sub-agents ---
@@ -415,8 +416,8 @@ def create_streaming_display(
         if preview:
             last_line = preview.split("\n")[-1].strip()
             if last_line:
-                if len(last_line) > 80:
-                    last_line = last_line[:77] + "..."
+                if len(last_line) > 60:
+                    last_line = last_line[:57] + "\u2026"
                 elements.append(Text(f"    {last_line}", style="dim italic"))
 
     # Task List panel (persistent, updates on write_todos / read_todos)
@@ -521,8 +522,12 @@ def display_final_results(
         console.print()
 
     if state.response_text:
+        # Strip trailing standalone "..." lines
+        clean_response = state.response_text.rstrip()
+        while clean_response.endswith("\n...") or clean_response.rstrip() == "...":
+            clean_response = clean_response.rstrip().removesuffix("...").rstrip()
         console.print()
-        console.print(Markdown(state.response_text))
+        console.print(Markdown(clean_response or state.response_text))
         console.print()
 
 
