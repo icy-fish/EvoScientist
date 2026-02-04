@@ -6,12 +6,19 @@ via JSON-RPC, similar to OpenClaw's approach.
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import AsyncIterator, Set
+from typing import AsyncIterator
 
 from ..base import Channel, IncomingMessage, OutgoingMessage, ChannelError
 from .rpc_client import ImsgRpcClient, RpcNotification
+from .targets import (
+    normalize_handle,
+    parse_target,
+    ChatIdTarget,
+    ChatGuidTarget,
+    ChatIdentifierTarget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +29,11 @@ class IMessageConfig:
 
     cli_path: str = "imsg"
     db_path: str | None = None
-    allowed_senders: Set[str] | None = None
+    allowed_senders: list[str] = field(default_factory=list)
     include_attachments: bool = False
     text_chunk_limit: int = 4000
     service: str = "auto"  # imessage, sms, or auto
+    region: str = "US"
 
 
 class IMessageChannelRpc(Channel):
@@ -70,7 +78,9 @@ class IMessageChannelRpc(Channel):
             return
 
         # Check allowed senders
-        if not self._is_sender_allowed(sender):
+        chat_id = message.get("chat_id")
+        chat_guid = message.get("chat_guid")
+        if not self._is_sender_allowed(sender, chat_id, chat_guid):
             logger.debug(f"Ignoring message from {sender}")
             return
 
@@ -113,31 +123,82 @@ class IMessageChannelRpc(Channel):
         except asyncio.QueueFull:
             logger.warning("Message queue full, dropping message")
 
-    def _is_sender_allowed(self, sender: str) -> bool:
-        """Check if sender is in allowed list."""
+    def _is_sender_allowed(
+        self,
+        sender: str,
+        chat_id: int | None = None,
+        chat_guid: str | None = None,
+    ) -> bool:
+        """Check if sender is in allowed list.
+
+        Supports:
+        - Wildcard "*" to allow all
+        - chat_id:123 to match by chat ID
+        - chat_guid:abc to match by chat GUID
+        - Normalized phone/email matching
+        """
         if not self.config.allowed_senders:
             return True
-        return sender in self.config.allowed_senders
+
+        # Wildcard allows all
+        if "*" in self.config.allowed_senders:
+            return True
+
+        sender_normalized = normalize_handle(sender)
+
+        for entry in self.config.allowed_senders:
+            entry = entry.strip()
+            if not entry:
+                continue
+
+            lower = entry.lower()
+
+            # Check chat_id match
+            if lower.startswith("chat_id:") or lower.startswith("chatid:"):
+                if chat_id is not None:
+                    try:
+                        allowed_id = int(entry.split(":", 1)[1].strip())
+                        if allowed_id == chat_id:
+                            return True
+                    except ValueError:
+                        pass
+                continue
+
+            # Check chat_guid match
+            if lower.startswith("chat_guid:") or lower.startswith("chatguid:"):
+                if chat_guid:
+                    allowed_guid = entry.split(":", 1)[1].strip()
+                    if allowed_guid == chat_guid:
+                        return True
+                continue
+
+            # Normalize and compare handle
+            entry_normalized = normalize_handle(entry)
+            if entry_normalized == sender_normalized:
+                return True
+
+        return False
 
     def add_allowed_sender(self, sender: str) -> None:
         """Add a sender to the allowed list."""
-        if self.config.allowed_senders is None:
-            self.config.allowed_senders = set()
-        self.config.allowed_senders.add(sender)
-        logger.info(f"Added allowed sender: {sender}")
+        normalized = normalize_handle(sender) if not sender.startswith("chat") else sender
+        if normalized not in self.config.allowed_senders:
+            self.config.allowed_senders.append(normalized)
+            logger.info(f"Added allowed sender: {normalized}")
 
     def remove_allowed_sender(self, sender: str) -> None:
         """Remove a sender from the allowed list."""
-        if self.config.allowed_senders:
-            self.config.allowed_senders.discard(sender)
-            logger.info(f"Removed allowed sender: {sender}")
+        normalized = normalize_handle(sender) if not sender.startswith("chat") else sender
+        if normalized in self.config.allowed_senders:
+            self.config.allowed_senders.remove(normalized)
+            logger.info(f"Removed allowed sender: {normalized}")
 
     def clear_allowed_senders(self) -> None:
         """Clear allowed list (allow all)."""
-        self.config.allowed_senders = None
+        self.config.allowed_senders = []
         logger.info("Cleared allowed senders (allowing all)")
 
-    def list_allowed_senders(self) -> set[str] | None:
+    def list_allowed_senders(self) -> list[str]:
         """Get current allowed senders."""
         return self.config.allowed_senders
 
@@ -243,23 +304,8 @@ class IMessageChannelRpc(Channel):
         segments = self._segment_message(message.content)
 
         for segment in segments:
-            # Prefer chat_id over recipient (to) for replies
-            chat_id = message.metadata.get("chat_id")
-
-            if chat_id:
-                params = {
-                    "chat_id": chat_id,
-                    "text": segment,
-                    "service": self.config.service,
-                }
-            elif message.recipient:
-                params = {
-                    "to": message.recipient,
-                    "text": segment,
-                    "service": self.config.service,
-                }
-            else:
-                logger.error("Cannot send: no recipient or chat_id")
+            params = self._build_send_params(message, segment)
+            if not params:
                 return False
 
             try:
@@ -269,3 +315,107 @@ class IMessageChannelRpc(Channel):
                 return False
 
         return True
+
+    def _build_send_params(
+        self, message: OutgoingMessage, text: str
+    ) -> dict | None:
+        """Build send parameters from message."""
+        params: dict = {
+            "text": text,
+            "service": self.config.service,
+            "region": self.config.region,
+        }
+
+        # Check metadata for chat targets
+        chat_id = message.metadata.get("chat_id")
+        chat_guid = message.metadata.get("chat_guid")
+        chat_identifier = message.metadata.get("chat_identifier")
+
+        if chat_id:
+            params["chat_id"] = chat_id
+        elif chat_guid:
+            params["chat_guid"] = chat_guid
+        elif chat_identifier:
+            params["chat_identifier"] = chat_identifier
+        elif message.recipient:
+            # Parse recipient to determine target type
+            try:
+                target = parse_target(message.recipient)
+                if isinstance(target, ChatIdTarget):
+                    params["chat_id"] = target.chat_id
+                elif isinstance(target, ChatGuidTarget):
+                    params["chat_guid"] = target.chat_guid
+                elif isinstance(target, ChatIdentifierTarget):
+                    params["chat_identifier"] = target.chat_identifier
+                else:
+                    params["to"] = target.to
+                    params["service"] = target.service.value
+            except ValueError:
+                params["to"] = message.recipient
+        else:
+            logger.error("Cannot send: no recipient or chat target")
+            return None
+
+        return params
+
+    async def send_media(
+        self,
+        recipient: str,
+        file_path: str,
+        caption: str = "",
+        metadata: dict | None = None,
+    ) -> bool:
+        """Send a media file via iMessage.
+
+        Args:
+            recipient: Target recipient or chat target
+            file_path: Local path to the media file
+            caption: Optional caption text
+            metadata: Optional metadata with chat_id etc.
+
+        Returns:
+            True if sent successfully
+        """
+        if not self._client:
+            logger.error("Cannot send media: client not running")
+            return False
+
+        metadata = metadata or {}
+        params: dict = {
+            "file": file_path,
+            "service": self.config.service,
+            "region": self.config.region,
+        }
+
+        if caption:
+            params["text"] = caption
+
+        # Determine target
+        chat_id = metadata.get("chat_id")
+        chat_guid = metadata.get("chat_guid")
+
+        if chat_id:
+            params["chat_id"] = chat_id
+        elif chat_guid:
+            params["chat_guid"] = chat_guid
+        elif recipient:
+            try:
+                target = parse_target(recipient)
+                if isinstance(target, ChatIdTarget):
+                    params["chat_id"] = target.chat_id
+                elif isinstance(target, ChatGuidTarget):
+                    params["chat_guid"] = target.chat_guid
+                else:
+                    params["to"] = target.to
+            except ValueError:
+                params["to"] = recipient
+        else:
+            logger.error("Cannot send media: no recipient")
+            return False
+
+        try:
+            await self._client.request("send", params)
+            return True
+        except Exception as e:
+            logger.error(f"Send media failed: {e}")
+            return False

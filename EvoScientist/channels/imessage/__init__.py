@@ -11,5 +11,23 @@ Requirements:
 
 from .channel_rpc import IMessageChannelRpc as IMessageChannel
 from .channel_rpc import IMessageConfig
+from .probe import probe_imessage, ProbeResult
+from .targets import (
+    parse_target,
+    normalize_handle,
+    normalize_e164,
+    IMessageTarget,
+    IMessageService,
+)
 
-__all__ = ["IMessageChannel", "IMessageConfig"]
+__all__ = [
+    "IMessageChannel",
+    "IMessageConfig",
+    "probe_imessage",
+    "ProbeResult",
+    "parse_target",
+    "normalize_handle",
+    "normalize_e164",
+    "IMessageTarget",
+    "IMessageService",
+]
