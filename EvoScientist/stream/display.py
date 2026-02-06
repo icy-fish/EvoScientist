@@ -579,6 +579,8 @@ def _run_streaming(
     thread_id: str,
     show_thinking: bool,
     interactive: bool,
+    on_thinking: "Callable[[str], None] | None" = None,
+    on_todo: "Callable[[list[dict]], None] | None" = None,
 ) -> str:
     """Run async streaming and render with Rich Live display.
 
@@ -590,6 +592,11 @@ def _run_streaming(
         thread_id: Thread ID
         show_thinking: Whether to show thinking panel
         interactive: If True, use simplified final display (no panel)
+        on_thinking: Optional sync callback receiving full thinking text.
+            Called once when thinking phase ends (transitions to tool/text)
+            and accumulated thinking >= 200 chars.
+        on_todo: Optional sync callback receiving todo items list.
+            Called once when write_todos tool_call is detected.
 
     Returns:
         The final response text.
@@ -598,10 +605,37 @@ def _run_streaming(
     nest_asyncio.apply()
 
     state = StreamState()
+    _thinking_sent = False
+    _todo_sent = False
+    _MIN_THINKING_LEN = 200
 
     async def _consume() -> None:
+        nonlocal _thinking_sent, _todo_sent
         async for event in stream_agent_events(agent, message, thread_id):
             event_type = state.handle_event(event)
+
+            # Send thinking to channel when transitioning away from thinking
+            if (on_thinking and not _thinking_sent
+                    and state.thinking_text
+                    and event_type != "thinking"
+                    and len(state.thinking_text) >= _MIN_THINKING_LEN):
+                on_thinking(state.thinking_text)
+                _thinking_sent = True
+
+            # Send todo list to channel on first write_todos tool_call
+            if (on_todo and not _todo_sent
+                    and event_type == "tool_call"
+                    and event.get("name") == "write_todos"
+                    and state.todo_items):
+                # Flush thinking before todo if not sent yet
+                if (on_thinking and not _thinking_sent
+                        and state.thinking_text
+                        and len(state.thinking_text) >= _MIN_THINKING_LEN):
+                    on_thinking(state.thinking_text)
+                    _thinking_sent = True
+                on_todo(state.todo_items)
+                _todo_sent = True
+
             live.update(create_streaming_display(
                 **state.get_display_args(),
                 show_thinking=show_thinking,
@@ -621,6 +655,11 @@ def _run_streaming(
             # No current event loop
             loop = _create_event_loop()
         loop.run_until_complete(_consume())
+
+    # Flush any remaining thinking that wasn't sent during streaming
+    if on_thinking and not _thinking_sent and state.thinking_text:
+        if len(state.thinking_text) >= _MIN_THINKING_LEN:
+            on_thinking(state.thinking_text)
 
     if interactive:
         display_final_results(

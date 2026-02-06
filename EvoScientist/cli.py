@@ -381,6 +381,7 @@ def _cmd_channel(args: str, agent: Any, thread_id: str) -> None:
     server = IMessageServer(
         config,
         handler=_create_channel_handler(),
+        send_thinking=True,
     )
 
     _ChannelState.server = server
@@ -460,7 +461,7 @@ def _auto_start_channel(agent: Any, thread_id: str, allowed_senders_csv: str) ->
         _ChannelState.agent = agent
         _ChannelState.thread_id = thread_id
 
-        server = IMessageServer(config, handler=_create_channel_handler())
+        server = IMessageServer(config, handler=_create_channel_handler(), send_thinking=True)
         _ChannelState.server = server
         _ChannelState.thread = threading.Thread(
             target=_run_channel_thread,
@@ -544,10 +545,46 @@ def cmd_interactive(
         _print_separator()
         console.print()
 
+        # Build channel callbacks for intermediate messages (thinking + todo)
+        on_thinking = None
+        on_todo = None
+        if _ChannelState.is_running() and _ChannelState.server and _ChannelState.loop:
+            def _send_thinking(thinking_text: str) -> None:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        _ChannelState.server.send_thinking_message(
+                            msg.sender, thinking_text, msg.metadata,
+                        ),
+                        _ChannelState.loop,
+                    )
+                except Exception:
+                    pass  # Non-critical — don't break main flow
+
+            def _send_todo(todo_items: list) -> None:
+                try:
+                    lines = [f"\U0001f4cb {len(todo_items)} tasks ongoing"]  # 📋
+                    for i, item in enumerate(todo_items, 1):
+                        content = item.get("content", "")
+                        lines.append(f"{i}. {content}")
+                    lines.append("\U0001f680")  # 🚀
+                    formatted = "\n".join(lines)
+                    asyncio.run_coroutine_threadsafe(
+                        _ChannelState.server.send_todo_message(
+                            msg.sender, formatted, msg.metadata,
+                        ),
+                        _ChannelState.loop,
+                    )
+                except Exception:
+                    pass  # Non-critical — don't break main flow
+
+            on_thinking = _send_thinking
+            on_todo = _send_todo
+
         try:
             # Use SAME _run_streaming as CLI input — full Live experience
             response_text = _run_streaming(
-                state["agent"], msg.content, state["thread_id"], show_thinking, interactive=True
+                state["agent"], msg.content, state["thread_id"], show_thinking,
+                interactive=True, on_thinking=on_thinking, on_todo=on_todo,
             )
 
             # Set response for channel handler to retrieve
