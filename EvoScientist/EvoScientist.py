@@ -22,6 +22,7 @@ from deepagents.backends import FilesystemBackend, CompositeBackend
 from .backends import CustomSandboxBackend, MergedReadOnlyBackend
 from .config import get_effective_config, apply_config_to_env
 from .llm import get_chat_model
+from .mcp_client import load_mcp_tools
 from .middleware import create_skills_middleware, create_memory_middleware
 from .prompts import RESEARCHER_INSTRUCTIONS, get_system_prompt
 from .utils import load_subagents
@@ -117,29 +118,65 @@ tool_registry = {
     "view_image": view_image,
 }
 
+# MCP config path (stable across reloads)
+MCP_CONFIG = Path(__file__).parent / "mcp.yaml"
+
+# Base tools that every agent variant gets (before MCP)
+BASE_TOOLS = [think_tool, skill_manager, view_image]
+
+
+def load_mcp_and_build_kwargs(base_backend, base_middleware):
+    """(Re-)load MCP tools and build agent kwargs.
+
+    Called once at import time for the default agent, and again on every
+    ``create_cli_agent()`` call so that ``/new`` picks up MCP config changes.
+    """
+    # Fresh tool registry each time — start from base tools
+    registry = dict(tool_registry)
+
+    # Load current MCP config
+    mcp_by_agent = load_mcp_tools(MCP_CONFIG)
+
+    # Register all MCP tools so subagent.yaml can reference them
+    for tools in mcp_by_agent.values():
+        for t in tools:
+            registry[t.name] = t
+
+    mcp_main = mcp_by_agent.pop("main", [])
+
+    subs = load_subagents(
+        SUBAGENTS_CONFIG,
+        tool_registry=registry,
+        prompt_refs=prompt_refs,
+    )
+
+    # Inject MCP tools into subagents by name
+    for sa in subs:
+        if sa_tools := mcp_by_agent.get(sa["name"], []):
+            sa.setdefault("tools", []).extend(sa_tools)
+
+    return dict(
+        name="EvoScientist",
+        model=chat_model,
+        tools=BASE_TOOLS + mcp_main,
+        backend=base_backend,
+        subagents=subs,
+        middleware=base_middleware,
+        system_prompt=SYSTEM_PROMPT,
+    )
+
+
 prompt_refs = {
     "RESEARCHER_INSTRUCTIONS": RESEARCHER_INSTRUCTIONS.format(date=current_date),
 }
 
-subagents = load_subagents(
-    SUBAGENTS_CONFIG,
-    tool_registry=tool_registry,
-    prompt_refs=prompt_refs,
-)
+base_middleware = [
+    create_memory_middleware(MEMORY_DIR, extraction_model=chat_model),
+    create_skills_middleware(SKILLS_DIR, user_skills_dir=USER_SKILLS_DIR),
+]
 
-# Shared kwargs for agent creation
-_AGENT_KWARGS = dict(
-    name="EvoScientist",
-    model=chat_model,
-    tools=[think_tool, skill_manager, view_image],
-    backend=backend,
-    subagents=subagents,
-    middleware=[
-        create_memory_middleware(MEMORY_DIR, extraction_model=chat_model),
-        create_skills_middleware(SKILLS_DIR, user_skills_dir=USER_SKILLS_DIR),
-    ],
-    system_prompt=SYSTEM_PROMPT,
-)
+# Shared kwargs for agent creation (snapshot at import time)
+_AGENT_KWARGS = load_mcp_and_build_kwargs(backend, base_middleware)
 
 # Default agent (no checkpointer) — used by langgraph dev / LangSmith / notebooks
 EvoScientist_agent = create_deep_agent(**_AGENT_KWARGS).with_config({"recursion_limit": 500})
@@ -178,17 +215,16 @@ def create_cli_agent(workspace_dir: str | None = None):
                 "/memory/": mem_backend,
             },
         )
-        mw = [
-            create_memory_middleware(MEMORY_DIR, extraction_model=chat_model),
-            create_skills_middleware(SKILLS_DIR, user_skills_dir=USER_SKILLS_DIR),
-        ]
-        kwargs = dict(
-            _AGENT_KWARGS,
-            backend=be,
-            middleware=mw,
-        )
     else:
-        kwargs = dict(_AGENT_KWARGS)
+        be = backend
+
+    mw = [
+        create_memory_middleware(MEMORY_DIR, extraction_model=chat_model),
+        create_skills_middleware(SKILLS_DIR, user_skills_dir=USER_SKILLS_DIR),
+    ]
+
+    # Re-load MCP tools from current config (picks up /mcp add changes)
+    kwargs = load_mcp_and_build_kwargs(be, mw)
 
     return create_deep_agent(
         **kwargs,

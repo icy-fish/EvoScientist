@@ -35,6 +35,7 @@
   - [CLI Inference](#cli-inference)
   - [Script Inference](#script-inference)
   - [Web Interface](#web-interface)
+- [🔌 MCP Tools](#-mcp-tools)
 - [📊 Evaluation](#-evaluation)
 - [📝 Citation](#-citation)
 - [📚 Acknowledgments](#-acknowledgments)
@@ -53,6 +54,11 @@
 | OpenAI | `gpt-4o-mini` | `gpt-4o-mini` |
 | OpenAI | `o1` | `o1` |
 | OpenAI | `o1-mini` | `o1-mini` |
+| Google | `gemini-3-pro` | `gemini-3-pro-preview` |
+| Google | `gemini-3-flash` | `gemini-3-flash-preview` |
+| Google | `gemini-2.5-pro` | `gemini-2.5-pro` |
+| Google | `gemini-2.5-flash` | `gemini-2.5-flash` |
+| Google | `gemini-2.5-flash-lite` | `gemini-2.5-flash-lite` |
 | NVIDIA | `glm4.7` | `z-ai/glm4.7` |
 | NVIDIA | `deepseek-v3.1` | `deepseek-ai/deepseek-v3.1-terminus` |
 | NVIDIA | `nemotron-nano` | `nvidia/nemotron-3-nano-30b-a3b` |
@@ -114,8 +120,9 @@ Set keys directly in your terminal session. Add these to your shell profile (`~/
 export ANTHROPIC_API_KEY="your_anthropic_api_key_here"
 export TAVILY_API_KEY="your_tavily_api_key_here"
 
-# Optional: OpenAI or NVIDIA provider
+# Optional: OpenAI, Google, or NVIDIA provider
 export OPENAI_API_KEY="your_openai_api_key_here"
+export GOOGLE_API_KEY="your_google_api_key_here"
 export NVIDIA_API_KEY="your_nvidia_api_key_here"
 ```
 
@@ -140,6 +147,7 @@ TAVILY_API_KEY=your_tavily_api_key_here
 | Key | Required | Description |
 |-----|----------|-------------|
 | `ANTHROPIC_API_KEY` | For Anthropic | Anthropic API key for Claude ([console.anthropic.com](https://console.anthropic.com/)) |
+| `GOOGLE_API_KEY` | For Google | Google API key for Gemini models ([aistudio.google.com](https://aistudio.google.com/api-keys)) |
 | `OPENAI_API_KEY` | For OpenAI | OpenAI API key for GPT models ([platform.openai.com](https://platform.openai.com/)) |
 | `NVIDIA_API_KEY` | For NVIDIA | NVIDIA API key for NIM models ([build.nvidia.com](https://build.nvidia.com/)) |
 | `TAVILY_API_KEY` | Yes | Tavily API key for web search ([app.tavily.com](https://app.tavily.com/)) |
@@ -194,6 +202,7 @@ EvoSci config path            # Show config file path
 | `/skills` | List installed user skills |
 | `/install-skill <source>` | Install a skill from local path or GitHub |
 | `/uninstall-skill <name>` | Uninstall a user-installed skill |
+| `/mcp` | List configured MCP servers and tool routing |
 
 **Skill Installation Examples:**
 
@@ -298,7 +307,118 @@ for state in EvoScientist_agent.stream(
 > TODO
 
 
-## 📊 Evaluation  
+## 🔌 MCP Tools
+
+EvoScientist supports [MCP](https://modelcontextprotocol.io/) servers, allowing you to extend agents with external tools (databases, APIs, etc.).
+
+### Adding Servers
+
+The quickest way to add an MCP server is from the CLI:
+
+```Shell
+# stdio transport (local process)
+EvoSci mcp add filesystem stdio npx -- -y @modelcontextprotocol/server-filesystem /tmp
+
+# http transport
+EvoSci mcp add brave-search http http://localhost:8080/mcp -H "Authorization:Bearer ${BRAVE_API_KEY}"
+
+# sse transport, routed to a specific agent
+EvoSci mcp add my-sse sse http://localhost:9090/sse -e research-agent
+
+# With tool allowlist
+EvoSci mcp add fs stdio npx -- -y @modelcontextprotocol/server-filesystem /tmp -t read_file,write_file
+```
+
+Or from the interactive CLI:
+
+```
+/mcp add filesystem stdio npx -y @modelcontextprotocol/server-filesystem /tmp
+/mcp remove filesystem
+/mcp list
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--tools`, `-t` | Comma-separated tool allowlist (omit = all tools) |
+| `--expose-to`, `-e` | Comma-separated target agents (default: `main`) |
+| `--header`, `-H` | HTTP header as `Key:Value` (repeatable) |
+| `--env` | Env var as `KEY=VALUE` for stdio (repeatable) |
+
+### YAML Configuration
+
+Servers are stored in `~/.config/evoscientist/mcp.yaml`. You can also edit this file directly:
+
+```yaml
+filesystem:
+  transport: stdio
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+  tools: [read_file, write_file]     # optional allowlist (omit = all tools)
+  expose_to: [main, code-agent]      # optional routing (omit = ["main"])
+
+brave-search:
+  transport: http
+  url: "http://localhost:8080/mcp"
+  headers:
+    Authorization: "Bearer ${BRAVE_API_KEY}"
+  expose_to: [research-agent]
+```
+
+Use `${VAR}` syntax to reference environment variables in config values.
+
+### Supported Transports
+
+| Transport | Config Fields |
+|-----------|--------------|
+| `stdio` | `command`, `args`, `env` (optional) |
+| `http` | `url`, `headers` (optional) |
+| `sse` | `url`, `headers` (optional) |
+| `websocket` | `url` |
+
+### Tool Routing
+
+Use `expose_to` to control which agents receive each server's tools:
+
+- `main` — the main EvoScientist orchestrator agent
+- Any subagent name (`code-agent`, `research-agent`, `debug-agent`, `planner-agent`, `data-analysis-agent`, `writing-agent`)
+
+Tools routed to subagents are injected automatically — no need to edit `subagent.yaml`. All MCP tools are also registered in the tool registry, so they can be referenced by name in `subagent.yaml` if needed.
+
+### Editing Servers
+
+Update individual fields on an existing server without re-adding it:
+
+```Shell
+# Change routing
+EvoSci mcp edit filesystem --expose-to main,code-agent
+
+# Set a tool allowlist
+EvoSci mcp edit filesystem --tools read_file,write_file
+
+# Clear a tool allowlist (pass all tools)
+EvoSci mcp edit filesystem --tools none
+
+# Change URL
+EvoSci mcp edit my-api --url http://new-host:9090/mcp
+```
+
+Or interactively: `/mcp edit filesystem --expose-to main,code-agent`
+
+### Management Commands
+
+```Shell
+EvoSci mcp              # List configured servers
+EvoSci mcp list         # List configured servers
+EvoSci mcp add ...      # Add a server
+EvoSci mcp edit ...     # Edit an existing server
+EvoSci mcp remove ...   # Remove a server
+```
+
+All commands also work interactively: `/mcp`, `/mcp list`, `/mcp add ...`, `/mcp edit ...`, `/mcp remove <name>`.
+
+## 📊 Evaluation
 
 > TODO
 
@@ -339,6 +459,15 @@ We thank the authors for their valuable contributions to the open-source communi
                style="object-fit: cover; border-radius: 20%;" alt="Xi Zhang"/>
           <br />
           <sub><b>Xi Zhang</b></sub>
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://din0s.me/">
+          <img src="https://din0s.me/images/pk.jpg"
+               width="100" height="100"
+               style="object-fit: cover; border-radius: 20%;" alt="Dinos Papakostas"/>
+          <br />
+          <sub><b>Dinos Papakostas</b></sub>
         </a>
       </td>
     </tr>

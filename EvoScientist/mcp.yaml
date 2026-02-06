@@ -1,0 +1,26 @@
+# MCP Server Configuration
+# ========================
+# Configure MCP servers to expose external tools to EvoScientist agents.
+#
+# Each key is a server name. Supported transports: stdio, http, sse, websocket.
+#
+# User-level config: ~/.config/evoscientist/mcp.yaml (merged on top of this file)
+#
+# Examples:
+#
+# brave-search:
+#   transport: http
+#   url: "http://localhost:8080/mcp"
+#   headers:
+#     Authorization: "Bearer ${BRAVE_API_KEY}"
+#   expose_to: [research-agent]
+#
+# local-sse-server:
+#   transport: sse
+#   url: "http://localhost:9090/sse"
+#   expose_to: [main]
+#
+# ws-server:
+#   transport: websocket
+#   url: "ws://localhost:8765"
+#   expose_to: [main]

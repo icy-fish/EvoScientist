@@ -33,6 +33,7 @@ dependencies = [
     "httpx>=0.27",
     "markdownify>=0.14",
     "nest-asyncio>=1.6",
+    "langchain-mcp-adapters>=0.1",
 ]
 
 [project.optional-dependencies]
@@ -62,7 +63,7 @@ build-backend = "setuptools.build_meta"
 include = ["EvoScientist*"]
 
 [tool.setuptools.package-data]
-EvoScientist = ["subagent.yaml", "skills/**/*"]
+EvoScientist = ["subagent.yaml", "mcp.yaml", "skills/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

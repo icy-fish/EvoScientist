@@ -235,6 +235,8 @@ def print_banner(
     info.append("/install-skill", style="bold")
     info.append(", ", style="dim")
     info.append("/uninstall-skill", style="bold")
+    info.append(", ", style="dim")
+    info.append("/mcp", style="bold")
     console.print(info)
     console.print()
 
@@ -398,6 +400,148 @@ def _cmd_channel(args: str, agent: Any, thread_id: str) -> None:
     else:
         console.print("[dim]Allowed: all senders[/dim]")
     console.print("[dim]Use[/dim] /channel stop [dim]to disconnect[/dim]\n")
+
+
+def _mcp_list_servers() -> None:
+    """Print a table of configured MCP servers."""
+    from .mcp_client import load_mcp_config
+    from pathlib import Path
+
+    config_path = Path(__file__).parent / "mcp.yaml"
+    config = load_mcp_config(config_path)
+
+    if not config:
+        console.print("[dim]No MCP servers configured.[/dim]")
+        console.print("[dim]Add one with:[/dim] /mcp add <name> <transport> <command-or-url> [args...]")
+        console.print()
+        return
+
+    table = Table(title="MCP Servers", show_header=True)
+    table.add_column("Server", style="cyan")
+    table.add_column("Transport", style="green")
+    table.add_column("Tools", style="yellow")
+    table.add_column("Expose To", style="magenta")
+
+    for name, server in config.items():
+        transport = server.get("transport", "?")
+        tools = server.get("tools")
+        tools_str = ", ".join(tools) if tools else "(all)"
+        expose_to = server.get("expose_to", ["main"])
+        if isinstance(expose_to, str):
+            expose_to = [expose_to]
+        expose_str = ", ".join(expose_to)
+        table.add_row(name, transport, tools_str, expose_str)
+
+    console.print(table)
+    console.print("\n[dim]User config:[/dim] [cyan]~/.config/evoscientist/mcp.yaml[/cyan]")
+    console.print()
+
+
+def _cmd_mcp_add(args_str: str) -> None:
+    """Handle ``/mcp add ...``."""
+    import shlex
+    from .mcp_client import add_mcp_server, parse_mcp_add_args
+
+    if not args_str.strip():
+        console.print("[bold]Usage:[/bold] /mcp add <name> <transport> <command-or-url> [args...]")
+        console.print()
+        console.print("[dim]Transports:[/dim] stdio, http, sse, websocket")
+        console.print()
+        console.print("[bold]Examples:[/bold]")
+        console.print("  /mcp add filesystem stdio npx -y @modelcontextprotocol/server-filesystem /tmp")
+        console.print("  /mcp add my-api http http://localhost:8080/mcp --header Authorization:Bearer\\ tok")
+        console.print("  /mcp add my-api sse http://localhost:9090/sse --expose-to research-agent")
+        console.print()
+        console.print("[dim]Options:[/dim]")
+        console.print("  --tools t1,t2          Tool allowlist")
+        console.print("  --expose-to a1,a2      Target agents (default: main)")
+        console.print("  --header Key:Value     HTTP header (repeatable)")
+        console.print("  --env KEY=VALUE        Env var for stdio (repeatable)")
+        console.print()
+        return
+
+    try:
+        tokens = shlex.split(args_str)
+        kwargs = parse_mcp_add_args(tokens)
+        entry = add_mcp_server(**kwargs)
+        console.print(f"[green]Added MCP server:[/green] [cyan]{kwargs['name']}[/cyan] ({entry['transport']})")
+        console.print("[dim]Reload the agent with /new to activate.[/dim]")
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+    console.print()
+
+
+def _cmd_mcp_edit(args_str: str) -> None:
+    """Handle ``/mcp edit <name> --field value ...``."""
+    import shlex
+    from .mcp_client import edit_mcp_server, parse_mcp_edit_args
+
+    if not args_str.strip():
+        console.print("[bold]Usage:[/bold] /mcp edit <name> --<field> <value> ...")
+        console.print()
+        console.print("[dim]Fields:[/dim] --transport, --command, --url, --args, --tools, --expose-to, --header, --env")
+        console.print("[dim]Use[/dim] --tools none [dim]or[/dim] --expose-to none [dim]to clear a field.[/dim]")
+        console.print()
+        console.print("[bold]Examples:[/bold]")
+        console.print("  /mcp edit filesystem --expose-to main,code-agent")
+        console.print("  /mcp edit filesystem --tools read_file,write_file")
+        console.print("  /mcp edit my-api --url http://new-host:8080/mcp")
+        console.print("  /mcp edit my-api --tools none")
+        console.print()
+        return
+
+    try:
+        tokens = shlex.split(args_str)
+        name, fields = parse_mcp_edit_args(tokens)
+        edit_mcp_server(name, **fields)
+        console.print(f"[green]Updated MCP server:[/green] [cyan]{name}[/cyan]")
+        for k, v in fields.items():
+            console.print(f"  [dim]{k}:[/dim] {v}")
+        console.print("[dim]Reload the agent with /new to apply.[/dim]")
+    except KeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+    console.print()
+
+
+def _cmd_mcp_remove(name: str) -> None:
+    """Handle ``/mcp remove <name>``."""
+    from .mcp_client import remove_mcp_server
+
+    if not name.strip():
+        console.print("[red]Usage:[/red] /mcp remove <name>")
+        console.print()
+        return
+
+    if remove_mcp_server(name.strip()):
+        console.print(f"[green]Removed MCP server:[/green] [cyan]{name.strip()}[/cyan]")
+        console.print("[dim]Reload the agent with /new to apply.[/dim]")
+    else:
+        console.print(f"[red]Server not found:[/red] {name.strip()}")
+    console.print()
+
+
+def _cmd_mcp(args: str) -> None:
+    """Dispatch ``/mcp`` subcommands."""
+    args = args.strip()
+
+    if not args or args == "list":
+        _mcp_list_servers()
+    elif args.startswith("add"):
+        _cmd_mcp_add(args[3:].strip())
+    elif args.startswith("edit"):
+        _cmd_mcp_edit(args[4:].strip())
+    elif args.startswith("remove"):
+        _cmd_mcp_remove(args[6:].strip())
+    else:
+        console.print("[bold]MCP commands:[/bold]")
+        console.print("  /mcp              List configured servers")
+        console.print("  /mcp list         List configured servers")
+        console.print("  /mcp add ...      Add a server")
+        console.print("  /mcp edit ...     Edit an existing server")
+        console.print("  /mcp remove ...   Remove a server")
+        console.print()
 
 
 def _cmd_channel_stop() -> None:
@@ -698,6 +842,10 @@ def cmd_interactive(
                         _cmd_uninstall_skill(name)
                         continue
 
+                    if user_input.lower().startswith("/mcp"):
+                        _cmd_mcp(user_input[4:])
+                        continue
+
                     if user_input.lower().startswith("/channel"):
                         args = user_input[len("/channel"):].strip()
                         if args.lower() == "stop":
@@ -809,6 +957,10 @@ app = typer.Typer(no_args_is_help=False, add_completion=False)
 # Config subcommand group
 config_app = typer.Typer(help="Configuration management commands", invoke_without_command=True)
 app.add_typer(config_app, name="config")
+
+# MCP subcommand group
+mcp_app = typer.Typer(help="MCP server management commands", invoke_without_command=True)
+app.add_typer(mcp_app, name="mcp")
 
 
 # =============================================================================
@@ -937,6 +1089,98 @@ def config_path():
     exists = path.exists()
     status = "[green]exists[/green]" if exists else "[dim]not created yet[/dim]"
     console.print(f"{path} ({status})")
+
+
+# =============================================================================
+# MCP commands
+# =============================================================================
+
+@mcp_app.callback(invoke_without_command=True)
+def mcp_callback(ctx: typer.Context):
+    """MCP server management commands."""
+    if ctx.invoked_subcommand is None:
+        mcp_list()
+
+
+@mcp_app.command("list")
+def mcp_list():
+    """List configured MCP servers."""
+    _mcp_list_servers()
+
+
+@mcp_app.command("add")
+def mcp_add(
+    name: str = typer.Argument(..., help="Server name"),
+    transport: str = typer.Argument(..., help="Transport: stdio, http, sse, websocket"),
+    target: str = typer.Argument(..., help="Command (stdio) or URL (http/sse/websocket)"),
+    args: Optional[list[str]] = typer.Argument(None, help="Extra args for stdio command"),
+    tools: Optional[str] = typer.Option(None, "--tools", "-t", help="Comma-separated tool allowlist"),
+    expose_to: Optional[str] = typer.Option(None, "--expose-to", "-e", help="Comma-separated target agents"),
+    header: Optional[list[str]] = typer.Option(None, "--header", "-H", help="HTTP header as Key:Value (repeatable)"),
+    env: Optional[list[str]] = typer.Option(None, "--env", help="Env var as KEY=VALUE for stdio (repeatable)"),
+):
+    """Add an MCP server to user config.
+
+    \b
+    Examples:
+      evosci mcp add filesystem stdio npx -- -y @modelcontextprotocol/server-filesystem /tmp
+      evosci mcp add my-api http http://localhost:8080/mcp -H "Authorization:Bearer tok"
+      evosci mcp add my-sse sse http://localhost:9090/sse -e research-agent
+    """
+    from .mcp_client import add_mcp_server
+
+    kwargs: dict = {
+        "name": name,
+        "transport": transport,
+    }
+
+    if transport == "stdio":
+        kwargs["command"] = target
+        kwargs["args"] = list(args) if args else []
+        if env:
+            env_dict = {}
+            for e in env:
+                if "=" in e:
+                    k, v = e.split("=", 1)
+                    env_dict[k.strip()] = v.strip()
+            if env_dict:
+                kwargs["env"] = env_dict
+    else:
+        kwargs["url"] = target
+        if header:
+            hdr_dict = {}
+            for h in header:
+                if ":" in h:
+                    k, v = h.split(":", 1)
+                    hdr_dict[k.strip()] = v.strip()
+            if hdr_dict:
+                kwargs["headers"] = hdr_dict
+
+    if tools:
+        kwargs["tools"] = [t.strip() for t in tools.split(",") if t.strip()]
+    if expose_to:
+        kwargs["expose_to"] = [a.strip() for a in expose_to.split(",") if a.strip()]
+
+    try:
+        entry = add_mcp_server(**kwargs)
+        console.print(f"[green]Added MCP server:[/green] [cyan]{name}[/cyan] ({entry['transport']})")
+    except ValueError as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        raise typer.Exit(1)
+
+
+@mcp_app.command("remove")
+def mcp_remove(
+    name: str = typer.Argument(..., help="Server name to remove"),
+):
+    """Remove an MCP server from user config."""
+    from .mcp_client import remove_mcp_server
+
+    if remove_mcp_server(name):
+        console.print(f"[green]Removed MCP server:[/green] [cyan]{name}[/cyan]")
+    else:
+        console.print(f"[red]Server not found:[/red] {name}")
+        raise typer.Exit(1)
 
 
 # =============================================================================
