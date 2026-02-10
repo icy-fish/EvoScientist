@@ -16,12 +16,14 @@ Features:
 import asyncio
 import logging
 import os
+import re
 import queue
 import sys
 import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 import typer  # type: ignore[import-untyped]
@@ -39,7 +41,7 @@ from rich.table import Table  # type: ignore[import-untyped]
 # Backward-compat re-exports (tests import these from EvoScientist.cli)
 from .stream.state import SubAgentState, StreamState, _parse_todo_items, _build_todo_stats  # noqa: F401
 from .stream.display import console, _run_streaming
-from .paths import ensure_dirs, new_run_dir, default_workspace_dir
+from .paths import ensure_dirs, new_run_dir, default_workspace_dir, RUNS_DIR
 
 
 def _shorten_path(path: str) -> str:
@@ -785,6 +787,7 @@ def cmd_interactive(
     provider: str | None = None,
     imessage_enabled: bool = False,
     imessage_allowed_senders: str = "",
+    run_name: str | None = None,
 ) -> None:
     """Interactive conversation mode with streaming output.
 
@@ -798,6 +801,7 @@ def cmd_interactive(
         provider: LLM provider name to display in banner
         imessage_enabled: Whether to auto-start iMessage channel
         imessage_allowed_senders: Comma-separated allowed senders
+        run_name: Optional run name for /new session deduplication
     """
     import nest_asyncio
     nest_asyncio.apply()
@@ -964,7 +968,7 @@ def cmd_interactive(
                     if user_input.lower() == "/new":
                         # New session: new thread; workspace only changes if not fixed
                         if not workspace_fixed:
-                            state["workspace_dir"] = _create_session_workspace()
+                            state["workspace_dir"] = _create_session_workspace(run_name)
                         console.print("[dim]Loading new session...[/dim]")
                         state["agent"] = _load_agent(workspace_dir=state["workspace_dir"])
                         state["thread_id"] = str(uuid.uuid4())
@@ -1088,9 +1092,28 @@ def cmd_run(agent: Any, prompt: str, thread_id: str | None = None, show_thinking
 # Agent loading helpers
 # =============================================================================
 
-def _create_session_workspace() -> str:
-    """Create a per-session workspace directory and return its path."""
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+def _deduplicate_run_name(name: str, runs_dir: Path = RUNS_DIR) -> str:
+    """Return *name* if available, otherwise *name_1*, *name_2*, etc."""
+    if not (runs_dir / name).exists():
+        return name
+    i = 1
+    while (runs_dir / f"{name}_{i}").exists():
+        i += 1
+    return f"{name}_{i}"
+
+
+def _create_session_workspace(name: str | None = None) -> str:
+    """Create a per-session workspace directory and return its path.
+
+    Args:
+        name: Optional human-friendly run name.  Duplicates are resolved
+              by appending ``_1``, ``_2``, etc.  Falls back to a timestamp
+              if *name* is None.
+    """
+    if name:
+        session_id = _deduplicate_run_name(name)
+    else:
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     workspace_dir = str(new_run_dir(session_id))
     os.makedirs(workspace_dir, exist_ok=True)
     return workspace_dir
@@ -1456,6 +1479,12 @@ def _main_callback(
         "--mode",
         help="Workspace mode: 'daemon' (persistent, default) or 'run' (isolated per-session)",
     ),
+    name: Optional[str] = typer.Option(
+        None,
+        "-n",
+        "--name",
+        help="Name for this run (used as directory name instead of timestamp; requires --mode run)",
+    ),
     prompt: Optional[str] = typer.Option(None, "-p", "--prompt", help="Query to execute (single-shot mode)"),
     thread_id: Optional[str] = typer.Option(None, "--thread-id", help="Thread ID for conversation persistence"),
     workdir: Optional[str] = typer.Option(None, "--workdir", help="Override workspace directory for this session"),
@@ -1498,6 +1527,15 @@ def _main_callback(
     if mode and mode not in ("run", "daemon"):
         raise typer.BadParameter("--mode must be 'run' or 'daemon'")
 
+    # --name only makes sense in run mode
+    if name and not (mode == "run" or (not mode and not workdir and not use_cwd and config.default_mode == "run")):
+        raise typer.BadParameter("--name can only be used with --mode run")
+
+    # Sanitize run name: allow alphanumeric, hyphens, underscores
+    if name:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            raise typer.BadParameter("--name may only contain letters, digits, hyphens, and underscores")
+
     ensure_dirs()
 
     # Resolve effective mode from config (CLI mode already applied via overrides)
@@ -1518,8 +1556,9 @@ def _main_callback(
         workspace_root = config.default_workdir or str(default_workspace_dir())
         workspace_root = os.path.abspath(os.path.expanduser(workspace_root))
         if effective_mode == "run":
-            session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-            workspace_dir = os.path.join(workspace_root, "runs", session_id)
+            runs_dir = Path(workspace_root, "runs")
+            session_id = _deduplicate_run_name(name, runs_dir) if name else datetime.now().strftime("%Y%m%d_%H%M%S")
+            workspace_dir = os.path.join(runs_dir, session_id)
             os.makedirs(workspace_dir, exist_ok=True)
             workspace_fixed = False
         else:  # daemon
@@ -1531,8 +1570,9 @@ def _main_callback(
         workspace_root = os.path.abspath(os.path.expanduser(config.default_workdir))
         effective_mode = config.default_mode
         if effective_mode == "run":
-            session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-            workspace_dir = os.path.join(workspace_root, "runs", session_id)
+            runs_dir = Path(workspace_root, "runs")
+            session_id = _deduplicate_run_name(name, runs_dir) if name else datetime.now().strftime("%Y%m%d_%H%M%S")
+            workspace_dir = os.path.join(runs_dir, session_id)
             os.makedirs(workspace_dir, exist_ok=True)
             workspace_fixed = False
         else:  # daemon
@@ -1542,7 +1582,7 @@ def _main_callback(
     else:
         effective_mode = config.default_mode
         if effective_mode == "run":
-            workspace_dir = _create_session_workspace()
+            workspace_dir = _create_session_workspace(name)
             workspace_fixed = False
         else:  # daemon mode (default)
             workspace_dir = str(default_workspace_dir())
@@ -1568,6 +1608,7 @@ def _main_callback(
             provider=config.provider,
             imessage_enabled=config.imessage_enabled,
             imessage_allowed_senders=config.imessage_allowed_senders,
+            run_name=name,
         )
 
 

@@ -170,6 +170,7 @@ EvoSci # or EvoScientist
 
 ```
 --mode <mode>      Workspace mode: 'daemon' (persistent) or 'run' (isolated per-session)
+-n, --name <name>  Name for the run directory (requires --mode run; duplicates get _1, _2, …)
 --workdir <path>   Override workspace directory for this session
 --use-cwd          Use current working directory as workspace
 --thread-id <id>   Resume a conversation thread
