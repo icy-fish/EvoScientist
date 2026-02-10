@@ -161,6 +161,9 @@ def load_subagents(
         if "model" in spec:
             subagent["model"] = spec["model"]
 
+        if "skills" in spec:
+            subagent["skills"] = spec["skills"]
+
         if "tools" in spec:
             subagent["tools"] = [tool_registry[t] for t in spec["tools"]]
 

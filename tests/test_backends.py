@@ -150,7 +150,7 @@ class TestSandboxId:
 class TestExecuteTruncation:
     def test_execute_truncates_large_output(self, tmp_workspace):
         backend = CustomSandboxBackend(
-            root_dir=tmp_workspace, working_dir=tmp_workspace,
+            root_dir=tmp_workspace,
             virtual_mode=True, max_output_bytes=100,
         )
         # Generate output larger than 100 bytes
@@ -163,7 +163,7 @@ class TestExecuteTruncation:
 
     def test_execute_no_truncation_small_output(self, tmp_workspace):
         backend = CustomSandboxBackend(
-            root_dir=tmp_workspace, working_dir=tmp_workspace,
+            root_dir=tmp_workspace,
             virtual_mode=True, max_output_bytes=100_000,
         )
         resp = backend.execute("echo hello")
@@ -176,14 +176,14 @@ class TestExecuteTruncation:
 class TestExecuteStderr:
     def test_execute_stderr_attribution(self, tmp_workspace):
         backend = CustomSandboxBackend(
-            root_dir=tmp_workspace, working_dir=tmp_workspace, virtual_mode=True,
+            root_dir=tmp_workspace, virtual_mode=True,
         )
         resp = backend.execute("python3 -c \"import sys; sys.stderr.write('warning\\n')\"")
         assert "[stderr] warning" in resp.output
 
     def test_execute_nonzero_exit_code_in_output(self, tmp_workspace):
         backend = CustomSandboxBackend(
-            root_dir=tmp_workspace, working_dir=tmp_workspace, virtual_mode=True,
+            root_dir=tmp_workspace, virtual_mode=True,
         )
         resp = backend.execute("python3 -c \"raise SystemExit(42)\"")
         assert resp.exit_code == 42
@@ -191,7 +191,7 @@ class TestExecuteStderr:
 
     def test_execute_mixed_stdout_stderr(self, tmp_workspace):
         backend = CustomSandboxBackend(
-            root_dir=tmp_workspace, working_dir=tmp_workspace, virtual_mode=True,
+            root_dir=tmp_workspace, virtual_mode=True,
         )
         resp = backend.execute(
             "python3 -c \"import sys; print('out'); sys.stderr.write('err\\n')\""
@@ -201,7 +201,7 @@ class TestExecuteStderr:
 
     def test_execute_success_no_exit_code(self, tmp_workspace):
         backend = CustomSandboxBackend(
-            root_dir=tmp_workspace, working_dir=tmp_workspace, virtual_mode=True,
+            root_dir=tmp_workspace, virtual_mode=True,
         )
         resp = backend.execute("echo ok")
         assert resp.exit_code == 0

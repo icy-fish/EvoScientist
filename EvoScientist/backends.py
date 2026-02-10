@@ -2,18 +2,16 @@
 
 import os
 import re
-import subprocess
 import uuid
 from pathlib import Path
 
-from deepagents.backends import FilesystemBackend
+from deepagents.backends import FilesystemBackend, LocalShellBackend
 from deepagents.backends.filesystem import WriteResult, EditResult
 from deepagents.backends.protocol import (
     BackendProtocol,
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
-    SandboxBackendProtocol,
 )
 
 # System path prefixes that should never appear in virtual paths.
@@ -226,25 +224,24 @@ class MergedReadOnlyBackend(BackendProtocol):
         ]
 
 
-class CustomSandboxBackend(FilesystemBackend, SandboxBackendProtocol):
+class CustomSandboxBackend(LocalShellBackend):
     """
-    Custom sandbox backend - inherits FilesystemBackend and implements execute method.
+    Custom sandbox backend - inherits LocalShellBackend with added safety.
 
     Features:
     - Inherits all file operations (ls, read, write, edit, grep, glob)
-    - Adds shell command execution capability
-    - Command validation prevents directory traversal and dangerous operations
-    - Runs commands in specified working directory
+    - Inherits shell command execution with output truncation and timeout
+    - Adds command validation to prevent directory traversal and dangerous operations
+    - Adds path sanitization to auto-correct common LLM path mistakes
     - Compatible with LangGraph checkpointer (no thread locks)
     """
 
     def __init__(
         self,
         root_dir: str = ".",
+        *,
         virtual_mode: bool = True,
-        working_dir: str | None = None,
         timeout: int = 300,
-        shell: str = "/bin/bash",
         max_output_bytes: int = 100_000,
         env: dict[str, str] | None = None,
         inherit_env: bool = True,
@@ -255,35 +252,23 @@ class CustomSandboxBackend(FilesystemBackend, SandboxBackendProtocol):
         Args:
             root_dir: File system root directory
             virtual_mode: Whether to enable virtual path mode
-            working_dir: Working directory for command execution (defaults to root_dir)
             timeout: Command execution timeout in seconds
-            shell: Shell program to use
             max_output_bytes: Max output size before truncation (default 100KB)
             env: Extra environment variables for subprocess
             inherit_env: Whether to inherit parent process env (default True)
         """
-        super().__init__(root_dir=root_dir, virtual_mode=virtual_mode)
-
+        super().__init__(
+            root_dir=root_dir,
+            virtual_mode=virtual_mode,
+            timeout=timeout,
+            max_output_bytes=max_output_bytes,
+            env=env,
+            inherit_env=inherit_env,
+        )
+        # Override parent's "local-" prefix with our own
         self._sandbox_id = f"evosci-{uuid.uuid4().hex[:8]}"
-        self.working_dir = working_dir or root_dir
-        self.timeout = timeout
-        self.shell = shell
-        self.virtual_mode = virtual_mode
-        self._max_output_bytes = max_output_bytes
-
-        # Build subprocess environment
-        if inherit_env:
-            self._env = {**os.environ, **(env or {})}
-        else:
-            self._env = dict(env) if env else {}
-
         # Ensure working directory exists
-        os.makedirs(self.working_dir, exist_ok=True)
-
-    @property
-    def id(self) -> str:
-        """Unique identifier for the sandbox backend instance."""
-        return self._sandbox_id
+        os.makedirs(str(self.cwd), exist_ok=True)
 
     def _resolve_path(self, key: str) -> Path:
         """Resolve path with sanitization to prevent nested directories.
@@ -326,74 +311,20 @@ class CustomSandboxBackend(FilesystemBackend, SandboxBackendProtocol):
         - Access to paths outside workspace
         - Dangerous system commands
 
-        Args:
-            command: Command string to execute
-
-        Returns:
-            ExecuteResponse containing output, exit_code, and truncated flag
+        Then delegates to LocalShellBackend.execute() for actual execution.
         """
-        try:
-            # Validate command safety
-            error = validate_command(command)
-            if error:
-                return ExecuteResponse(
-                    output=error,
-                    exit_code=1,
-                    truncated=False,
-                )
-
-            # Convert virtual paths to relative paths
-            if self.virtual_mode:
-                command = convert_virtual_paths_in_command(command=command)
-
-            result = subprocess.run(
-                command,
-                shell=True,
-                executable=self.shell,
-                cwd=self.working_dir,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                env=self._env,
-            )
-
-            output_parts = []
-            if result.stdout:
-                output_parts.append(result.stdout)
-            if result.stderr:
-                stderr_lines = result.stderr.strip().split("\n")
-                output_parts.extend(f"[stderr] {line}" for line in stderr_lines)
-            output = "\n".join(output_parts) if output_parts else ""
-
-            if result.returncode != 0:
-                output = f"{output.rstrip()}\n\nExit code: {result.returncode}"
-
-            truncated = False
-            if len(output) > self._max_output_bytes:
-                output = output[:self._max_output_bytes]
-                output += f"\n\n... Output truncated at {self._max_output_bytes} bytes."
-                truncated = True
-
+        # Validate command safety
+        error = validate_command(command)
+        if error:
             return ExecuteResponse(
-                output=output,
-                exit_code=result.returncode,
-                truncated=truncated,
-            )
-
-        except subprocess.TimeoutExpired:
-            return ExecuteResponse(
-                output=f"Command timed out after {self.timeout} seconds",
-                exit_code=-1,
-                truncated=False,
-            )
-        except Exception as e:
-            return ExecuteResponse(
-                output=f"Error executing command: {str(e)}",
-                exit_code=-1,
+                output=error,
+                exit_code=1,
                 truncated=False,
             )
 
-    async def aexecute(self, command: str) -> ExecuteResponse:
-        """Async version of execute (runs sync version in thread)."""
-        import asyncio
-        return await asyncio.to_thread(self.execute, command)
+        # Convert virtual paths to relative paths
+        if self.virtual_mode:
+            command = convert_virtual_paths_in_command(command=command)
+
+        # Delegate to parent for subprocess execution
+        return super().execute(command)
