@@ -7,6 +7,7 @@ and routes the resulting LangChain tools to the appropriate agents.
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 import os
 import re
@@ -534,14 +535,41 @@ def _build_connections(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _filter_tools(tools: list, allowed_names: list[str] | None) -> list:
-    """Filter tools by allowlist.
+    """Filter tools by allowlist with wildcard support.
 
     If *allowed_names* is ``None``, all tools pass through.
+
+    Supports glob-style wildcards:
+    - ``*`` matches any sequence of characters
+    - ``?`` matches any single character
+    - ``[seq]`` matches any character in seq
+    - ``[!seq]`` matches any character not in seq
+
+    Examples:
+    - ``*_exa`` matches ``web_search_exa``, ``get_code_context_exa``
+    - ``read_*`` matches ``read_file``, ``read_directory``
+    - ``tool_[0-9]`` matches ``tool_1``, ``tool_2``, etc.
     """
     if allowed_names is None:
         return tools
-    allowed_set = set(allowed_names)
-    return [t for t in tools if t.name in allowed_set]
+
+    # Check if any pattern contains wildcard characters
+    has_wildcards = any(
+        any(char in pattern for char in "*?[]")
+        for pattern in allowed_names
+    )
+
+    if not has_wildcards:
+        # Fast path: exact matching with set lookup
+        allowed_set = set(allowed_names)
+        return [t for t in tools if t.name in allowed_set]
+
+    # Wildcard matching: check each tool against all patterns
+    filtered = []
+    for tool in tools:
+        if any(fnmatch.fnmatch(tool.name, pattern) for pattern in allowed_names):
+            filtered.append(tool)
+    return filtered
 
 
 def _route_tools(

@@ -67,6 +67,58 @@ github:
 
 Available agents: `main`, `planner-agent`, `research-agent`, `code-agent`, `debug-agent`, `data-analysis-agent`, `writing-agent`.
 
+## Tool Filtering with Wildcards
+
+Use the `tools` field to filter which tools from a server are exposed. Supports glob-style wildcards:
+
+```yaml
+# Exact matching (original behavior)
+exa:
+  transport: http
+  url: https://mcp.exa.ai/mcp
+  tools:
+    - web_search_exa
+    - get_code_context_exa
+    - company_research_exa
+
+# Wildcard: all tools ending with _exa
+exa:
+  transport: http
+  url: https://mcp.exa.ai/mcp
+  tools:
+    - "*_exa"
+
+# Multiple patterns
+filesystem:
+  transport: stdio
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+  tools:
+    - "read_*"      # read_file, read_directory, etc.
+    - "write_*"     # write_file, etc.
+    - "list_*"      # list_directory, etc.
+
+# Mix wildcards and exact matches
+mixed:
+  transport: http
+  url: https://example.com/mcp
+  tools:
+    - "search_*"       # All search tools
+    - "get_metadata"   # Plus this specific tool
+```
+
+### Wildcard Patterns
+
+| Pattern | Matches | Example |
+|---------|---------|---------|
+| `*` | Any sequence of characters | `*_exa` matches `web_search_exa`, `get_code_context_exa` |
+| `?` | Any single character | `tool_?` matches `tool_1`, `tool_2` but not `tool_10` |
+| `[seq]` | Any character in sequence | `tool_[abc]` matches `tool_a`, `tool_b`, `tool_c` |
+| `[0-9]` | Any character in range | `version_[0-9]` matches `version_0` through `version_9` |
+| `[!seq]` | Any character NOT in sequence | `tool_[!0-9]` matches `tool_a` but not `tool_1` |
+
+Wildcards work with exact patterns — you can mix both in the same `tools` list.
+
 ## CLI Commands
 
 ```

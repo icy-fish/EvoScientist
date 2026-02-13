@@ -211,6 +211,158 @@ class TestFilterTools:
         assert _filter_tools([], ["a"]) == []
         assert _filter_tools([], None) == []
 
+    # Wildcard tests
+
+    def test_wildcard_star_suffix(self):
+        """Test *_exa pattern matching."""
+        tools = [
+            _make_tool("web_search_exa"),
+            _make_tool("get_code_context_exa"),
+            _make_tool("company_research_exa"),
+            _make_tool("unrelated_tool"),
+        ]
+        result = _filter_tools(tools, ["*_exa"])
+        assert [t.name for t in result] == [
+            "web_search_exa",
+            "get_code_context_exa",
+            "company_research_exa",
+        ]
+
+    def test_wildcard_star_prefix(self):
+        """Test read_* pattern matching."""
+        tools = [
+            _make_tool("read_file"),
+            _make_tool("read_directory"),
+            _make_tool("read_link"),
+            _make_tool("write_file"),
+        ]
+        result = _filter_tools(tools, ["read_*"])
+        assert [t.name for t in result] == [
+            "read_file",
+            "read_directory",
+            "read_link",
+        ]
+
+    def test_wildcard_star_middle(self):
+        """Test pattern with * in the middle."""
+        tools = [
+            _make_tool("get_user_data"),
+            _make_tool("get_admin_data"),
+            _make_tool("get_file"),
+        ]
+        result = _filter_tools(tools, ["get_*_data"])
+        assert [t.name for t in result] == ["get_user_data", "get_admin_data"]
+
+    def test_wildcard_star_only(self):
+        """Test * matches everything."""
+        tools = [_make_tool("a"), _make_tool("b"), _make_tool("c")]
+        result = _filter_tools(tools, ["*"])
+        assert [t.name for t in result] == ["a", "b", "c"]
+
+    def test_wildcard_question_mark(self):
+        """Test ? matches single character."""
+        tools = [
+            _make_tool("tool_1"),
+            _make_tool("tool_2"),
+            _make_tool("tool_10"),
+        ]
+        result = _filter_tools(tools, ["tool_?"])
+        assert [t.name for t in result] == ["tool_1", "tool_2"]
+
+    def test_wildcard_character_class(self):
+        """Test [seq] matches characters in sequence."""
+        tools = [
+            _make_tool("tool_a"),
+            _make_tool("tool_b"),
+            _make_tool("tool_c"),
+            _make_tool("tool_d"),
+        ]
+        result = _filter_tools(tools, ["tool_[abc]"])
+        assert [t.name for t in result] == ["tool_a", "tool_b", "tool_c"]
+
+    def test_wildcard_character_class_range(self):
+        """Test [0-9] matches digit range."""
+        tools = [
+            _make_tool("tool_0"),
+            _make_tool("tool_5"),
+            _make_tool("tool_9"),
+            _make_tool("tool_a"),
+        ]
+        result = _filter_tools(tools, ["tool_[0-9]"])
+        assert [t.name for t in result] == ["tool_0", "tool_5", "tool_9"]
+
+    def test_wildcard_negated_character_class(self):
+        """Test [!seq] matches characters not in sequence."""
+        tools = [
+            _make_tool("tool_a"),
+            _make_tool("tool_b"),
+            _make_tool("tool_1"),
+            _make_tool("tool_2"),
+        ]
+        result = _filter_tools(tools, ["tool_[!0-9]"])
+        assert [t.name for t in result] == ["tool_a", "tool_b"]
+
+    def test_wildcard_mixed_with_exact(self):
+        """Test mixing wildcard and exact patterns."""
+        tools = [
+            _make_tool("web_search_exa"),
+            _make_tool("get_code_context_exa"),
+            _make_tool("specific_tool"),
+            _make_tool("another_tool"),
+        ]
+        result = _filter_tools(tools, ["*_exa", "specific_tool"])
+        assert [t.name for t in result] == [
+            "web_search_exa",
+            "get_code_context_exa",
+            "specific_tool",
+        ]
+
+    def test_wildcard_multiple_patterns(self):
+        """Test multiple wildcard patterns."""
+        tools = [
+            _make_tool("read_file"),
+            _make_tool("write_file"),
+            _make_tool("delete_file"),
+            _make_tool("search_database"),
+        ]
+        result = _filter_tools(tools, ["read_*", "write_*"])
+        assert [t.name for t in result] == ["read_file", "write_file"]
+
+    def test_wildcard_no_match(self):
+        """Test wildcard pattern that doesn't match anything."""
+        tools = [_make_tool("foo"), _make_tool("bar")]
+        result = _filter_tools(tools, ["baz_*"])
+        assert result == []
+
+    def test_wildcard_overlapping_patterns(self):
+        """Test overlapping patterns don't duplicate results."""
+        tools = [_make_tool("tool_abc"), _make_tool("tool_xyz")]
+        result = _filter_tools(tools, ["tool_*", "*_abc"])
+        # Should include each tool only once
+        assert [t.name for t in result] == ["tool_abc", "tool_xyz"]
+
+    def test_wildcard_complex_pattern(self):
+        """Test complex wildcard pattern."""
+        tools = [
+            _make_tool("get_user_info_v1"),
+            _make_tool("get_user_info_v2"),
+            _make_tool("get_admin_info_v1"),
+            _make_tool("set_user_info"),
+        ]
+        result = _filter_tools(tools, ["get_*_info_v?"])
+        assert [t.name for t in result] == [
+            "get_user_info_v1",
+            "get_user_info_v2",
+            "get_admin_info_v1",
+        ]
+
+    def test_exact_match_performance_path(self):
+        """Test exact matching still works (fast path)."""
+        # This test verifies backward compatibility with exact matching
+        tools = [_make_tool("a"), _make_tool("b"), _make_tool("c")]
+        result = _filter_tools(tools, ["a", "c"])
+        assert [t.name for t in result] == ["a", "c"]
+
 
 # ---- _route_tools ----
 
