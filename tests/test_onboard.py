@@ -617,8 +617,16 @@ class TestStepChannels:
 
         config = EvoScientistConfig()
 
+        _real_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "telegram":
+                return  # pretend installed
+            return _real_import(name, *args, **kwargs)
+
         with patch("EvoScientist.config.onboard.questionary") as mock_q, \
-             patch("EvoScientist.config.onboard._probe_channel"):
+             patch("EvoScientist.config.onboard._probe_channel"), \
+             patch("builtins.__import__", side_effect=_fake_import):
             mock_q.checkbox.return_value.ask.return_value = ["telegram"]
             mock_q.text.return_value.ask.return_value = "test-token"
             result = _step_channels(config)
@@ -632,8 +640,16 @@ class TestStepChannels:
 
         config = EvoScientistConfig()
 
+        _real_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "discord":
+                return  # pretend installed
+            return _real_import(name, *args, **kwargs)
+
         with patch("EvoScientist.config.onboard.questionary") as mock_q, \
-             patch("EvoScientist.config.onboard._probe_channel"):
+             patch("EvoScientist.config.onboard._probe_channel"), \
+             patch("builtins.__import__", side_effect=_fake_import):
             mock_q.checkbox.return_value.ask.return_value = ["discord"]
             mock_q.text.return_value.ask.return_value = "discord-token"
             result = _step_channels(config)
