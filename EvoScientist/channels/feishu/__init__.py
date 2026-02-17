@@ -6,6 +6,7 @@ __all__ = ["FeishuChannel", "FeishuConfig"]
 
 def create_from_config(config) -> FeishuChannel:
     allowed = _parse_csv(config.feishu_allowed_senders)
+    proxy = config.feishu_proxy if config.feishu_proxy else None
     return FeishuChannel(FeishuConfig(
         app_id=config.feishu_app_id,
         app_secret=config.feishu_app_secret,
@@ -14,7 +15,7 @@ def create_from_config(config) -> FeishuChannel:
         webhook_port=config.feishu_webhook_port,
         allowed_senders=allowed,
         feishu_domain=config.feishu_domain,
-        proxy=getattr(config, 'feishu_proxy', '') or None,
+        proxy=proxy,
     ))
 
 

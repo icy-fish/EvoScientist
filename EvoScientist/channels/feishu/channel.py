@@ -222,6 +222,14 @@ class FeishuChannel(Channel, WebhookMixin, TokenMixin):
 
     name = "feishu"
     _ready_attrs = ("_http_client", "_access_token")
+    _non_retryable_patterns = (
+        "app_access_token is empty",   # invalid credentials
+        "10003",                        # invalid app_id
+        "10014",                        # invalid app_secret
+        "99991401",                     # permission denied
+        "99991663",                     # no permission
+        "99991672",                     # feature not enabled
+    )
     _rate_limit_patterns = ("99991400", "rate limit", "频率限制")
     _rate_limit_delay = 2.0
 

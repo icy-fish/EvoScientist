@@ -1319,7 +1319,7 @@ def _step_channels(config: EvoScientistConfig) -> dict[str, object]:
         ("telegram",  "Telegram",  [("telegram_bot_token", "Bot token (from @BotFather)")], "telegram", "telegram"),
         ("discord",   "Discord",   [("discord_bot_token", "Bot token")], "discord", "discord"),
         ("slack",     "Slack",     [("slack_bot_token", "Bot token (xoxb-...)"), ("slack_app_token", "App token for Socket Mode (xapp-...)")], "slack_sdk", "slack"),
-        ("feishu",    "Feishu",    [("feishu_app_id", "App ID"), ("feishu_app_secret", "App Secret"), ("feishu_verification_token", "Verification Token"), ("feishu_encrypt_key", "Encrypt Key")], "aiohttp", "feishu"),
+        ("feishu",    "Feishu",    [("feishu_app_id", "App ID"), ("feishu_app_secret", "App Secret")], "aiohttp", "feishu"),
         ("dingtalk",  "DingTalk",  [("dingtalk_client_id", "Client ID (AppKey)"), ("dingtalk_client_secret", "Client Secret (AppSecret)")], "aiohttp", "dingtalk"),
         ("wechat",    "WeChat",    [("wechat_wecom_corp_id", "WeCom Corp ID"), ("wechat_wecom_agent_id", "WeCom Agent ID"), ("wechat_wecom_secret", "WeCom Secret")], "aiohttp", "wechat"),
         ("imessage",  "iMessage",  [], None, None),  # handled via _setup_imessage()
@@ -1411,6 +1411,24 @@ def _step_channels(config: EvoScientistConfig) -> dict[str, object]:
             if value is None:
                 raise KeyboardInterrupt()
             updates[field_name] = value.strip()
+
+        # Feishu optional fields (verification_token & encrypt_key)
+        if ch_name == "feishu":
+            console.print("  [dim]The following fields are optional (press Enter to skip):[/dim]")
+            for field_name, prompt_label in [
+                ("feishu_verification_token", "Verification Token (optional)"),
+                ("feishu_encrypt_key", "Encrypt Key (optional)"),
+            ]:
+                current = getattr(config, field_name, "")
+                value = questionary.text(
+                    f"{prompt_label}:",
+                    default=current,
+                    style=WIZARD_STYLE,
+                    qmark=f"  {QMARK}",
+                ).ask()
+                if value is None:
+                    raise KeyboardInterrupt()
+                updates[field_name] = value.strip()
 
         # Allowed senders (common for all channels)
         senders_field = f"{ch_name}_allowed_senders"
