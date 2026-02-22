@@ -252,7 +252,9 @@ class WebSocketMixin:
             try:
                 await task
             except asyncio.CancelledError:
-                pass
+                current = asyncio.current_task()
+                if current is not None and current.cancelling() > 0:
+                    raise
             except Exception:
                 pass
 
@@ -315,6 +317,8 @@ class PollingMixin:
             try:
                 await task
             except asyncio.CancelledError:
-                pass
+                current = asyncio.current_task()
+                if current is not None and current.cancelling() > 0:
+                    raise
             except Exception:
                 pass

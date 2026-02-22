@@ -31,13 +31,18 @@ _logger = logging.getLogger(__name__)
 async def _cancel_task(task: asyncio.Task) -> None:
     """Cancel an asyncio task and await its completion.
 
-    Suppresses ``CancelledError`` so callers don't need to handle it.
+    Suppresses ``CancelledError`` from the cancelled *task* but re-raises
+    if the **current** task was itself cancelled (to avoid swallowing an
+    outer cancellation signal — required for correct behaviour on
+    Python 3.12+ where ``_must_cancel`` no longer auto-re-delivers).
     """
     task.cancel()
     try:
         await task
     except asyncio.CancelledError:
-        pass
+        current = asyncio.current_task()
+        if current is not None and current.cancelling() > 0:
+            raise
     except Exception:
         pass  # Already logged elsewhere; prevent unhandled propagation
 
