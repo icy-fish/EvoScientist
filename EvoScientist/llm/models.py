@@ -20,10 +20,12 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _MODEL_ENTRIES: list[tuple[str, str, str]] = [
     # Anthropic (ordered by capability)
     ("claude-opus-4-6", "claude-opus-4-6", "anthropic"),
+    ("claude-sonnet-4-6", "claude-sonnet-4-6", "anthropic"),
     ("claude-opus-4-5", "claude-opus-4-5-20251101", "anthropic"),
     ("claude-sonnet-4-5", "claude-sonnet-4-5-20250929", "anthropic"),
     ("claude-haiku-4-5", "claude-haiku-4-5-20251001", "anthropic"),
     # OpenAI
+    ("gpt-5.3-codex", "gpt-5.3-codex", "openai"),
     ("gpt-5.2-codex", "gpt-5.2-codex", "openai"),
     ("gpt-5.2", "gpt-5.2-2025-12-11", "openai"),
     ("gpt-5.1", "gpt-5.1-2025-11-13", "openai"),
@@ -159,14 +161,15 @@ def get_chat_model(
 
     # Auto-enable thinking for Anthropic models
     if provider == "anthropic" and "thinking" not in kwargs:
-        if model_id.startswith("claude-opus-4-6"):
+        if model_id.endswith("4-6"):
             kwargs["thinking"] = {"type": "adaptive"}
+            kwargs.setdefault("effort", "max")
         else:
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 2000}
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
 
     # Auto-enable reasoning for OpenAI models (not for third-party routed)
     if provider == "openai" and not _is_third_party and "reasoning" not in kwargs:
-        kwargs["reasoning"] = {"effort": "medium", "summary": "auto"}
+        kwargs["reasoning"] = {"effort": "high", "summary": "auto"}
 
     # Auto-enable thinking visibility for Google GenAI models
     if provider == "google-genai":
