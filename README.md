@@ -346,7 +346,16 @@ We thank the authors for their valuable contributions to the open-source communi
                width="100" height="100"
                style="object-fit: cover; border-radius: 20%;" alt="Yougang Lyu"/>
           <br />
-          <sub><b>Yougang Lyu</b><sup>§1</sup></sub>
+          <sub><b>Yougang Lyu</b><sup>§</sup></sub>
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://xiaohuiyan.github.io/">
+          <img src="https://xiaohuiyan.github.io/img/me.jpg"
+               width="100" height="100"
+               style="object-fit: cover; border-radius: 20%;" alt="Xiaohui Yan"/>
+          <br />
+          <sub><b>Xiaohui Yan</b><sup>§</sup></sub>
         </a>
       </td>
     </tr>
@@ -355,11 +364,11 @@ We thank the authors for their valuable contributions to the open-source communi
 
 #### Collaborators
 
-Jan Piotrowski<sup>1</sup>, Wiktor Cupiał<sup>1</sup>, Yuyue Zhao<sup>1</sup>, Xinhao Yi<sup>2</sup>, Jakub Kaliski<sup>1</sup>, Jakub Filipiuk<sup>1</sup>, Shuyu Guo<sup>1</sup>, Andreas Sauter<sup>1</sup>, Jacopo Urbani<sup>1</sup>, Zaiqiao Meng<sup>2</sup>, Zhaochun Ren, Lun Zhou<sup>1</sup>, Xiaohui Yan<sup>§1</sup>
+Jan Piotrowski, Wiktor Cupiał, Yuyue Zhao, Xinhao Yi, Jakub Kaliski, Jakub Filipiuk, Shuyu Guo, Andreas Sauter, Jacopo Urbani, Zaiqiao Meng, Lun Zhou
 
 > <sup>†</sup>Project Lead & Engineering Lead <sup>‡</sup>Core Developer <sup>§</sup>Project Correspondent
 
-> <sup>1</sup>Xiaoyi DeepResearch Team <sup>2</sup>EvoAgentX Team
+> Xiaoyi DeepResearch Team and the wider open-source community contribute to this project.
 
 For any enquiries or collaboration opportunities, please contact: [**EvoScientist.ai@gmail.com**](mailto:evoscientist.ai@gmail.com)
 
