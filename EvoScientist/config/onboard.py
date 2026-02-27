@@ -422,9 +422,9 @@ def _step_provider(config: EvoScientistConfig) -> str:
         Choice(title="Anthropic (Claude models)", value="anthropic"),
         Choice(title="OpenAI (GPT models)", value="openai"),
         Choice(title="Google GenAI (Gemini models)", value="google-genai"),
-        Choice(title="NVIDIA (DeepSeek, Kimi, GLM, MiniMax, Step, etc.)", value="nvidia"),
-        Choice(title="SiliconFlow (third party)", value="siliconflow"),
-        Choice(title="OpenRouter (third party)", value="openrouter"),
+        Choice(title="NVIDIA (third party — limited free requests)", value="nvidia"),
+        Choice(title="SiliconFlow (third party — GLM, Kimi, MiniMax, etc.)", value="siliconflow"),
+        Choice(title="OpenRouter (third party — Grok, Gemini, Qwen, etc.)", value="openrouter"),
         Choice(title="Ollama (local models)", value="ollama"),
         Choice(title="Other (OpenAI-compatible)", value="custom"),
     ]
@@ -543,18 +543,6 @@ def _step_provider_api_key(
     return _prompt_and_validate_api_key(
         prompt_text, current, validate_fn, skip_validation,
     )
-
-
-_THIRD_PARTY_EXAMPLES: dict[str, list[tuple[str, str]]] = {
-    "openrouter": [
-        ("minimax/minimax-m2.5", "MiniMax M2.5"),
-        ("x-ai/grok-4.1-fast", "Grok 4.1 Fast"),
-    ],
-    "siliconflow": [
-        ("Pro/zai-org/GLM-5", "GLM 5"),
-        ("Pro/moonshotai/Kimi-K2.5", "Kimi K2.5"),
-    ],
-}
 
 
 def _step_base_url(config: EvoScientistConfig) -> str:
@@ -678,44 +666,6 @@ def _step_model(
             console.print(f"  [dim]Using default: {model}[/dim]")
         return model
 
-    # Third-party providers: select from examples or type custom model name
-    if provider in _THIRD_PARTY_EXAMPLES:
-        examples = _THIRD_PARTY_EXAMPLES[provider]
-        _CUSTOM_SENTINEL = "__custom__"
-        choices = [
-            Choice(title=f"{label} ({mid})", value=mid)
-            for mid, label in examples
-        ]
-        choices.append(Choice(title="Customize your model...", value=_CUSTOM_SENTINEL))
-
-        selected = questionary.select(
-            "Select model:",
-            choices=choices,
-            default=choices[0].value,
-            style=WIZARD_STYLE,
-            qmark=QMARK,
-            use_indicator=True,
-        ).ask()
-        if selected is None:
-            raise KeyboardInterrupt()
-
-        if selected != _CUSTOM_SENTINEL:
-            return selected
-
-        model = questionary.text(
-            "Model name:",
-            style=WIZARD_STYLE,
-            qmark=QMARK,
-            placeholder=FormattedText([("fg:#858585", " e.g. owner/model-name")]),
-        ).ask()
-        if model is None:
-            raise KeyboardInterrupt()
-        model = model.strip()
-        if not model:
-            model = examples[0][0]
-            console.print(f"  [dim]Using default: {model}[/dim]")
-        return model
-
     # Get models for the selected provider
     entries = get_models_for_provider(provider)
 
@@ -734,9 +684,11 @@ def _step_model(
     provider_models = [name for name, _ in entries]
 
     # Create choices with model IDs as hints
+    _CUSTOM_SENTINEL = "__custom__"
     choices = []
     for name, model_id in entries:
         choices.append(Choice(title=f"{name} ({model_id})", value=name))
+    choices.append(Choice(title="Type a model name...", value=_CUSTOM_SENTINEL))
 
     # Determine default
     if config.model in provider_models:
@@ -744,7 +696,7 @@ def _step_model(
     else:
         default = provider_models[0]
 
-    model = questionary.select(
+    selected = questionary.select(
         "Select model:",
         choices=choices,
         default=default,
@@ -753,9 +705,24 @@ def _step_model(
         use_indicator=True,
     ).ask()
 
-    if model is None:
+    if selected is None:
         raise KeyboardInterrupt()
 
+    if selected != _CUSTOM_SENTINEL:
+        return selected
+
+    model = questionary.text(
+        "Model name:",
+        style=WIZARD_STYLE,
+        qmark=QMARK,
+        placeholder=FormattedText([("fg:#858585", " e.g. owner/model-name")]),
+    ).ask()
+    if model is None:
+        raise KeyboardInterrupt()
+    model = model.strip()
+    if not model:
+        model = provider_models[0]
+        console.print(f"  [dim]Using default: {model}[/dim]")
     return model
 
 

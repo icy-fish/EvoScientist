@@ -46,9 +46,22 @@ _MODEL_ENTRIES: list[tuple[str, str, str]] = [
     ("deepseek-v3.1", "deepseek-ai/deepseek-v3.1-terminus", "nvidia"),
     ("kimi-k2.5", "moonshotai/kimi-k2.5", "nvidia"),
     ("kimi-k2-thinking", "moonshotai/kimi-k2-thinking", "nvidia"),
+    ("minimax-m2.5", "minimaxai/minimax-m2.5", "nvidia"),
     ("minimax-m2.1", "minimaxai/minimax-m2.1", "nvidia"),
+    ("qwen3.5-397b", "qwen/qwen3.5-397b-a17b", "nvidia"),
     ("step-3.5-flash", "stepfun-ai/step-3.5-flash", "nvidia"),
     ("nemotron-nano", "nvidia/nemotron-3-nano-30b-a3b", "nvidia"),
+    # SiliconFlow
+    ("minimax-m2.5", "Pro/MiniMaxAI/MiniMax-M2.5", "siliconflow"),
+    ("glm-5", "Pro/zai-org/GLM-5", "siliconflow"),
+    ("kimi-k2.5", "Pro/moonshotai/Kimi-K2.5", "siliconflow"),
+    ("glm-4.7", "Pro/zai-org/GLM-4.7", "siliconflow"),
+    # OpenRouter
+    ("minimax-m2.5", "minimax/minimax-m2.5", "openrouter"),
+    ("grok-4.1-fast", "x-ai/grok-4.1-fast", "openrouter"),
+    ("qwen3.5-122b", "qwen/qwen3.5-122b-a10b", "openrouter"),
+    ("gemini-3-flash", "google/gemini-3-flash-preview", "openrouter"),
+    ("claude-sonnet-4.6", "anthropic/claude-sonnet-4.6", "openrouter"),
 ]
 
 # Public dict for simple lookups (last entry wins for duplicate names).
@@ -147,6 +160,9 @@ def get_chat_model(
         api_key = os.environ.get("SILICONFLOW_API_KEY", "")
         if api_key:
             kwargs["api_key"] = api_key
+        # Disable thinking — LangChain drops reasoning_content from history,
+        # causing SiliconFlow to reject multi-turn requests (error 20015).
+        kwargs.setdefault("extra_body", {})["enable_thinking"] = False
         provider = "openai"
     elif provider == "openrouter":
         kwargs["base_url"] = _OPENROUTER_BASE_URL

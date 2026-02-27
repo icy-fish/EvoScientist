@@ -33,7 +33,7 @@ class TestModelsRegistry:
 
     def test_entries_are_valid_tuples(self):
         """Test that _MODEL_ENTRIES contains valid (name, model_id, provider) tuples."""
-        valid_providers = {"anthropic", "openai", "google-genai", "nvidia"}
+        valid_providers = {"anthropic", "openai", "google-genai", "nvidia", "siliconflow", "openrouter"}
         for entry in _MODEL_ENTRIES:
             assert len(entry) == 3, f"Entry {entry} doesn't have 3 elements"
             name, model_id, provider = entry
@@ -49,9 +49,11 @@ class TestModelsRegistry:
             assert isinstance(name, str)
             assert isinstance(model_id, str)
 
-        # Third-party providers have no registered models (user types model name)
+        # Third-party providers now have registered models
         openrouter_models = get_models_for_provider("openrouter")
-        assert len(openrouter_models) == 0
+        assert len(openrouter_models) > 0
+        siliconflow_models = get_models_for_provider("siliconflow")
+        assert len(siliconflow_models) > 0
 
 
 # =============================================================================
