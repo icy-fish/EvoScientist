@@ -1,8 +1,9 @@
 """LLM model configuration based on LangChain init_chat_model.
 
 This module provides a unified interface for creating chat model instances
-with support for multiple providers (Anthropic, OpenAI) and convenient
-short names for common models.
+with support for multiple providers (Anthropic, OpenAI, Google GenAI, NVIDIA,
+SiliconFlow, OpenRouter, Ollama, and custom OpenAI-compatible endpoints) and
+convenient short names for common models.
 """
 
 from __future__ import annotations
@@ -14,6 +15,14 @@ from langchain.chat_models import init_chat_model
 
 _SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Third-party providers routed through the OpenAI provider with a custom base_url.
+# Maps provider name → (base_url or None, env var for API key).
+_THIRD_PARTY_PROVIDERS: dict[str, tuple[str | None, str]] = {
+    "siliconflow": (_SILICONFLOW_BASE_URL, "SILICONFLOW_API_KEY"),
+    "openrouter": (_OPENROUTER_BASE_URL, "OPENROUTER_API_KEY"),
+    "custom": (None, "CUSTOM_API_KEY"),  # base_url from CUSTOM_BASE_URL env
+}
 
 # Model registry: list of (short_name, model_id, provider)
 # Allows same short_name across different providers.
@@ -89,6 +98,34 @@ def get_models_for_provider(provider: str) -> list[tuple[str, str]]:
     ]
 
 
+def _apply_auto_config(
+    provider: str,
+    model_id: str,
+    is_third_party: bool,
+    kwargs: dict[str, Any],
+) -> None:
+    """Auto-enable provider-specific features (thinking, reasoning, etc.).
+
+    Mutates *kwargs* in place.  Only sets keys that the caller hasn't already
+    provided, so explicit user settings are never overridden.
+    """
+    # Anthropic: extended thinking
+    if provider == "anthropic" and "thinking" not in kwargs:
+        if model_id.endswith("4-6"):
+            kwargs["thinking"] = {"type": "adaptive"}
+            kwargs.setdefault("effort", "max")
+        else:
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+
+    # OpenAI (native, not third-party routed): reasoning
+    if provider == "openai" and not is_third_party and "reasoning" not in kwargs:
+        kwargs["reasoning"] = {"effort": "high", "summary": "auto"}
+
+    # Google GenAI: surface thinking traces
+    if provider == "google-genai":
+        kwargs.setdefault("include_thoughts", True)
+
+
 def get_chat_model(
     model: str | None = None,
     provider: str | None = None,
@@ -140,56 +177,33 @@ def get_chat_model(
             elif model_id.startswith("ollama:"):
                 provider = "ollama"
                 model_id = model_id.removeprefix("ollama:")
-            elif "/" in model_id:
-                provider = "nvidia"
             else:
                 provider = "anthropic"  # Default fallback
 
-    # SiliconFlow / OpenRouter / Custom → route through OpenAI provider with base_url
-    _is_third_party = provider in ("siliconflow", "openrouter", "custom")
-    if provider == "custom":
-        base_url = os.environ.get("CUSTOM_BASE_URL", "")
+    # Third-party providers → route through OpenAI provider with base_url
+    _is_third_party = provider in _THIRD_PARTY_PROVIDERS
+    if provider in _THIRD_PARTY_PROVIDERS:
+        base_url_default, api_key_env = _THIRD_PARTY_PROVIDERS[provider]
+        if provider == "custom":
+            base_url = os.environ.get("CUSTOM_BASE_URL", "")
+        else:
+            base_url = base_url_default
         if base_url:
             kwargs["base_url"] = base_url
-        api_key = os.environ.get("CUSTOM_API_KEY", "")
+        api_key = os.environ.get(api_key_env, "")
         if api_key:
             kwargs["api_key"] = api_key
-        provider = "openai"
-    elif provider == "siliconflow":
-        kwargs["base_url"] = _SILICONFLOW_BASE_URL
-        api_key = os.environ.get("SILICONFLOW_API_KEY", "")
-        if api_key:
-            kwargs["api_key"] = api_key
-        # Disable thinking — LangChain drops reasoning_content from history,
-        # causing SiliconFlow to reject multi-turn requests (error 20015).
-        kwargs.setdefault("extra_body", {})["enable_thinking"] = False
-        provider = "openai"
-    elif provider == "openrouter":
-        kwargs["base_url"] = _OPENROUTER_BASE_URL
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        if api_key:
-            kwargs["api_key"] = api_key
+        # SiliconFlow: disable thinking — LangChain drops reasoning_content
+        # from history, causing error 20015 on multi-turn requests.
+        if provider == "siliconflow":
+            kwargs.setdefault("extra_body", {})["enable_thinking"] = False
         provider = "openai"
     elif provider == "ollama":
         base_url = os.environ.get("OLLAMA_BASE_URL", "")
         if base_url:
             kwargs["base_url"] = base_url
 
-    # Auto-enable thinking for Anthropic models
-    if provider == "anthropic" and "thinking" not in kwargs:
-        if model_id.endswith("4-6"):
-            kwargs["thinking"] = {"type": "adaptive"}
-            kwargs.setdefault("effort", "max")
-        else:
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
-
-    # Auto-enable reasoning for OpenAI models (not for third-party routed)
-    if provider == "openai" and not _is_third_party and "reasoning" not in kwargs:
-        kwargs["reasoning"] = {"effort": "high", "summary": "auto"}
-
-    # Auto-enable thinking visibility for Google GenAI models
-    if provider == "google-genai":
-        kwargs.setdefault("include_thoughts", True)
+    _apply_auto_config(provider, model_id, _is_third_party, kwargs)
 
     return init_chat_model(model=model_id, model_provider=provider, **kwargs)
 

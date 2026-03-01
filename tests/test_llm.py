@@ -24,12 +24,14 @@ class TestModelsRegistry:
         assert isinstance(MODELS, dict)
 
     def test_entries_has_all_providers(self):
-        """Test that _MODEL_ENTRIES covers native providers."""
+        """Test that _MODEL_ENTRIES covers all registered providers."""
         providers = {p for _, _, p in _MODEL_ENTRIES}
         assert "anthropic" in providers
         assert "openai" in providers
         assert "google-genai" in providers
         assert "nvidia" in providers
+        assert "siliconflow" in providers
+        assert "openrouter" in providers
 
     def test_entries_are_valid_tuples(self):
         """Test that _MODEL_ENTRIES contains valid (name, model_id, provider) tuples."""
@@ -305,4 +307,145 @@ class TestOllamaProvider:
         call_kwargs = mock_init.call_args[1]
         assert call_kwargs["model"] == "phi3:mini"
         assert call_kwargs["model_provider"] == "ollama"
+
+
+# =============================================================================
+# Test slash model ID no longer routes to nvidia
+# =============================================================================
+
+
+class TestSlashModelIdFallback:
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_slash_model_id_defaults_to_anthropic(self, mock_init):
+        """Unregistered model IDs containing '/' should NOT route to nvidia.
+
+        They fall through to the default 'anthropic' provider, consistent
+        with how all other unknown model IDs are handled.
+        """
+        mock_init.return_value = "mock_model"
+
+        get_chat_model("some-org/some-model")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["model"] == "some-org/some-model"
+        assert call_kwargs["model_provider"] == "anthropic"
+
+
+# =============================================================================
+# Test third-party provider routing
+# =============================================================================
+
+
+class TestThirdPartyRouting:
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_siliconflow_routes_through_openai(self, mock_init, monkeypatch):
+        """SiliconFlow provider should route through OpenAI with correct base_url."""
+        mock_init.return_value = "mock_model"
+        monkeypatch.setenv("SILICONFLOW_API_KEY", "sf-key-123")
+
+        get_chat_model("Pro/zai-org/GLM-5", provider="siliconflow")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["model_provider"] == "openai"
+        assert call_kwargs["base_url"] == "https://api.siliconflow.cn/v1"
+        assert call_kwargs["api_key"] == "sf-key-123"
+        # SiliconFlow should disable thinking
+        assert call_kwargs["extra_body"]["enable_thinking"] is False
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_openrouter_routes_through_openai(self, mock_init, monkeypatch):
+        """OpenRouter provider should route through OpenAI with correct base_url."""
+        mock_init.return_value = "mock_model"
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-key-456")
+
+        get_chat_model("x-ai/grok-4.1-fast", provider="openrouter")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["model_provider"] == "openai"
+        assert call_kwargs["base_url"] == "https://openrouter.ai/api/v1"
+        assert call_kwargs["api_key"] == "or-key-456"
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_custom_routes_through_openai(self, mock_init, monkeypatch):
+        """Custom provider should route through OpenAI with env-configured base_url."""
+        mock_init.return_value = "mock_model"
+        monkeypatch.setenv("CUSTOM_BASE_URL", "https://my-llm.example.com/v1")
+        monkeypatch.setenv("CUSTOM_API_KEY", "custom-key-789")
+
+        get_chat_model("my-custom-model", provider="custom")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["model_provider"] == "openai"
+        assert call_kwargs["base_url"] == "https://my-llm.example.com/v1"
+        assert call_kwargs["api_key"] == "custom-key-789"
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_third_party_no_reasoning(self, mock_init, monkeypatch):
+        """Third-party providers routed through OpenAI should NOT get auto-reasoning."""
+        mock_init.return_value = "mock_model"
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+
+        get_chat_model("x-ai/grok-4.1-fast", provider="openrouter")
+
+        call_kwargs = mock_init.call_args[1]
+        assert "reasoning" not in call_kwargs
+
+
+# =============================================================================
+# Test _apply_auto_config
+# =============================================================================
+
+
+class TestAutoConfig:
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_anthropic_4_5_thinking(self, mock_init):
+        """Anthropic 4-5 models get enabled thinking with budget."""
+        mock_init.return_value = "mock_model"
+
+        get_chat_model("claude-sonnet-4-5")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["thinking"] == {"type": "enabled", "budget_tokens": 10000}
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_anthropic_4_6_adaptive_thinking(self, mock_init):
+        """Anthropic 4-6 models get adaptive thinking with max effort."""
+        mock_init.return_value = "mock_model"
+
+        get_chat_model("claude-sonnet-4-6")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["thinking"] == {"type": "adaptive"}
+        assert call_kwargs["effort"] == "max"
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_anthropic_thinking_not_overridden(self, mock_init):
+        """User-supplied thinking config should not be overridden."""
+        mock_init.return_value = "mock_model"
+        custom_thinking = {"type": "enabled", "budget_tokens": 500}
+
+        get_chat_model("claude-sonnet-4-6", thinking=custom_thinking)
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["thinking"] == custom_thinking
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_openai_reasoning(self, mock_init):
+        """Native OpenAI models get auto-reasoning."""
+        mock_init.return_value = "mock_model"
+
+        get_chat_model("gpt-5-nano")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["reasoning"] == {"effort": "high", "summary": "auto"}
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_google_thoughts(self, mock_init):
+        """Google GenAI models get include_thoughts=True by default."""
+        mock_init.return_value = "mock_model"
+
+        get_chat_model("gemini-2.5-flash")
+
+        call_kwargs = mock_init.call_args[1]
+        assert call_kwargs["include_thoughts"] is True
 
