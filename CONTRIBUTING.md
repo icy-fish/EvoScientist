@@ -20,7 +20,7 @@ EvoScientist is a multi-agent AI system for automated scientific experimentation
 | License | MIT |
 | Framework | [DeepAgents](https://github.com/langchain-ai/deepagents) + [LangChain](https://python.langchain.com/) + [LangGraph](https://langchain-ai.github.io/langgraph/) |
 | Default model | `claude-sonnet-4-6` (Anthropic) |
-| Tests | ~830 across 35 files, no API keys needed |
+| Tests | ~837 across 35 files, no API keys needed |
 | Config file | `~/.config/evoscientist/config.yaml` |
 
 ### Sub-Agents (defined in `EvoScientist/subagent.yaml`)
@@ -218,10 +218,15 @@ EvoScientist/EvoScientist/
 |
 +-- skills/              # Built-in skills (read-only to agent)
     |-- find-skills/     # Skill discovery
-    +-- skill-creator/   # Skill creation wizard
+    +-- skill-creator/   # Skill creation wizard (Apache 2.0 licensed, see LICENSE.txt)
+        |-- scripts/
+        |   |-- run_eval.py           # Single-skill trigger evaluation via LLM tool-calling
+        |   |-- run_loop.py           # Iterative description optimization (train/test split)
+        |   +-- improve_description.py # LLM-based description improvement
+        +-- eval-viewer/              # HTML eval result viewer
 ```
 
-Additional built-in skills (`agent-swarm-protocol`, `paper-planning`, `paper-review`, `paper-writing`) can be installed as user skills under `workspace/skills/`.
+10 additional research-lifecycle skills are available in the [EvoSkills repo](../EvoSkills/skills/) covering ideation, experimentation, writing, and support phases. Install via `/install-skill ../EvoSkills/skills` (batch) or `/install-skill ../EvoSkills/skills/<name>` (single).
 
 ### Tests
 
@@ -295,7 +300,7 @@ Two variants exist:
 ### Configuration System
 
 `config/settings.py`:
-- **`EvoScientistConfig`** — Dataclass with all settings: API keys (Anthropic, OpenAI, Google, NVIDIA, Tavily, SiliconFlow, OpenRouter, custom, Ollama), LLM settings (provider, model), workspace settings (default_mode, default_workdir), UI settings (show_thinking, ui_backend), and channel-specific settings.
+- **`EvoScientistConfig`** — Dataclass with all settings: API keys (Anthropic, OpenAI, Google, NVIDIA, Tavily, SiliconFlow, OpenRouter, ZhipuAI, custom, Ollama), LLM settings (provider, model), workspace settings (default_mode, default_workdir), UI settings (show_thinking, ui_backend), and channel-specific settings.
 - **`get_effective_config(cli_overrides)`** — Merges 4 sources in priority order (CLI > env > file > defaults).
 - **`apply_config_to_env(config)`** — Sets API keys as env vars for downstream libraries (LangChain, Tavily).
 - **`load_config()` / `save_config()`** — YAML file I/O at `~/.config/evoscientist/config.yaml`.
@@ -642,16 +647,53 @@ class EvoScientistConfig:
 
 ### Adding a New LLM Provider
 
-1. **Add model entries** to `_MODEL_ENTRIES` in `llm/models.py`:
+There are three levels of provider integration, from simplest to most involved:
+
+#### A. Adding models to an existing provider
+
+Just add entries to `_MODEL_ENTRIES` in `llm/models.py`:
 
 ```python
 _MODEL_ENTRIES = [
     ...
-    ("my-model", "my-provider/my-model-id", "myprovider"),
+    ("my-model", "my-model-id", "existing-provider"),
 ]
 ```
 
-2. **Update `get_chat_model()`** in `llm/models.py` — Add provider-specific initialization if needed (API key handling, special kwargs).
+No config, dependency, or onboard changes needed.
+
+#### B. Adding a new third-party provider (routes through OpenAI)
+
+Third-party providers that expose an OpenAI-compatible API use the `_THIRD_PARTY_PROVIDERS` pattern (e.g., SiliconFlow, OpenRouter, ZhipuAI). This avoids adding a new `langchain-*` dependency.
+
+1. **Add provider routing** to `_THIRD_PARTY_PROVIDERS` in `llm/models.py`:
+
+```python
+_THIRD_PARTY_PROVIDERS = {
+    ...
+    "myprovider": ("https://api.myprovider.com/v1", "MYPROVIDER_API_KEY"),
+}
+```
+
+2. **Add model entries** to `_MODEL_ENTRIES`:
+
+```python
+("my-model", "my-model-id", "myprovider"),
+```
+
+3. **Add config fields** — Add `myprovider_api_key` to `EvoScientistConfig` in `config/settings.py`, the `_ENV_MAP`, and `apply_config_to_env()`.
+
+4. **Update onboard wizard** — Add API key prompt in `config/onboard.py`.
+
+5. **Test** — Add provider tests in `tests/test_llm.py`. Mock the chat model constructor.
+
+#### C. Adding a new native provider (new LangChain package)
+
+For providers that require their own `langchain-*` package (e.g., Anthropic, Google GenAI, NVIDIA):
+
+1. **Add model entries** to `_MODEL_ENTRIES` in `llm/models.py`.
+
+2. **Update `get_chat_model()`** in `llm/models.py` — Add provider-specific initialization if needed (API key handling, special kwargs, auto-config in `_apply_auto_config()`).
 
 3. **Add config fields** — Add `myprovider_api_key` to `EvoScientistConfig` and the env var mapping.
 
@@ -723,7 +765,7 @@ Prefer inline `# noqa: RULE` for individual exceptions over `per-file-ignores` i
 ### Running Tests
 
 ```bash
-# All tests (~830 tests, no API keys needed)
+# All tests (~837 tests, no API keys needed)
 pytest -v
 
 # Single file
@@ -838,7 +880,7 @@ Ask your agent to confirm:
 Never commit real API keys or secrets. Configure via:
 - `EvoSci onboard` (interactive wizard)
 - `EvoSci config set <key> <value>`
-- Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `NVIDIA_API_KEY`, `TAVILY_API_KEY`, etc.)
+- Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `NVIDIA_API_KEY`, `TAVILY_API_KEY`, `ZHIPU_API_KEY`, etc.)
 
 Config file: `~/.config/evoscientist/config.yaml`
 MCP config: `~/.config/evoscientist/mcp.yaml`
