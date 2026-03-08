@@ -76,7 +76,7 @@ class TestEvoScientistConfig:
         assert config.default_mode == "daemon"
         assert config.default_workdir == ""
         assert config.show_thinking is True
-        assert config.ui_backend == "rich"
+        assert config.ui_backend == "tui"
         assert config.ollama_base_url == ""
         assert config.imessage_enabled is False
         assert config.imessage_allowed_senders == ""
@@ -315,10 +315,10 @@ class TestPriorityChain:
 
     def test_env_ui_backend_override(self, temp_config_dir, monkeypatch):
         """UI backend can be selected via environment variable."""
-        save_config(EvoScientistConfig(ui_backend="rich"))
-        monkeypatch.setenv("EVOSCIENTIST_UI_BACKEND", "textual")
+        save_config(EvoScientistConfig(ui_backend="cli"))
+        monkeypatch.setenv("EVOSCIENTIST_UI_BACKEND", "tui")
         config = get_effective_config()
-        assert config.ui_backend == "textual"
+        assert config.ui_backend == "tui"
 
     def test_env_api_key_override(self, temp_config_dir, monkeypatch):
         """Test API keys from env override file."""

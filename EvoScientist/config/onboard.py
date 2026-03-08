@@ -478,8 +478,8 @@ def _step_ui_backend(config: EvoScientistConfig) -> str:
         Selected backend name ("rich" or "textual").
     """
     choices = [
-        Choice(title="Rich CLI (classic terminal)", value="rich"),
-        Choice(title="Textual TUI (full-screen interface)", value="textual"),
+        Choice(title="TUI (full-screen interface, recommended)", value="tui"),
+        Choice(title="CLI (classic terminal, lightweight)", value="cli"),
     ]
 
     backend = questionary.select(

@@ -418,7 +418,7 @@ def _main_callback(
     ui: Optional[str] = typer.Option(
         None,
         "--ui",
-        help="UI backend: rich (default) or textual (beta).",
+        help="UI backend: tui (default) or cli.",
     ),
 ):
     """EvoScientist Agent - AI-powered research & code execution CLI"""
@@ -461,8 +461,8 @@ def _main_callback(
 
     if mode and mode not in ("run", "daemon"):
         raise typer.BadParameter("--mode must be 'run' or 'daemon'")
-    if ui and ui.lower() not in ("rich", "textual"):
-        raise typer.BadParameter("--ui must be 'rich' or 'textual'")
+    if ui and ui.lower() not in ("cli", "tui"):
+        raise typer.BadParameter("--ui must be 'tui' or 'cli'")
 
     # --name only makes sense in run mode
     if name and not (mode == "run" or (not mode and not workdir and not use_cwd and config.default_mode == "run")):

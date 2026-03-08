@@ -161,7 +161,7 @@ def cmd_interactive(
     provider: str | None = None,
     run_name: str | None = None,
     thread_id: str | None = None,
-    ui_backend: str = "rich",
+    ui_backend: str = "cli",
     config=None,
 ) -> None:
     """Interactive conversation mode with streaming output.
@@ -179,13 +179,13 @@ def cmd_interactive(
         provider: LLM provider name to display in banner
         run_name: Optional run name for /new session deduplication
         thread_id: Optional thread ID to resume a previous session
-        ui_backend: UI backend ('rich' or 'textual')
+        ui_backend: UI backend ('cli' or 'tui')
     """
     import nest_asyncio
     nest_asyncio.apply()
 
     resolved_ui_backend = resolve_ui_backend(ui_backend, warn_fallback=True)
-    if resolved_ui_backend == "textual":
+    if resolved_ui_backend == "tui":
         from functools import partial
         load_agent = partial(_load_agent, config=config)
         run_textual_interactive(
@@ -735,7 +735,7 @@ def cmd_run(
     show_thinking: bool = True,
     workspace_dir: str | None = None,
     model: str | None = None,
-    ui_backend: str = "rich",
+    ui_backend: str = "cli",
 ) -> None:
     """Single-shot execution with streaming display.
 
@@ -746,7 +746,7 @@ def cmd_run(
         show_thinking: Whether to display thinking panels
         workspace_dir: Per-session workspace directory path
         model: Model name for checkpoint metadata
-        ui_backend: UI backend ('rich' or 'textual')
+        ui_backend: UI backend ('cli' or 'tui')
     """
     thread_id = thread_id or generate_thread_id()
 

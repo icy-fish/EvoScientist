@@ -7,8 +7,8 @@ from typing import Any, Callable
 from ..stream.display import console
 from .tui_backends import RichStreamingBackend, StreamingTUIBackend
 
-DEFAULT_UI_BACKEND = "rich"
-SUPPORTED_UI_BACKENDS = ("rich", "textual")
+DEFAULT_UI_BACKEND = "cli"
+SUPPORTED_UI_BACKENDS = ("cli", "tui")
 
 
 def normalize_ui_backend(value: str | None) -> str:
@@ -32,11 +32,11 @@ def _has_textual_support() -> bool:
 def resolve_ui_backend(value: str | None, *, warn_fallback: bool = False) -> str:
     """Resolve requested backend and fallback safely when unavailable."""
     requested = normalize_ui_backend(value)
-    if requested == "textual" and not _has_textual_support():
+    if requested == "tui" and not _has_textual_support():
         if warn_fallback:
             console.print(
-                '[yellow]Textual TUI is unavailable (missing textual package). '
-                'Falling back to Rich.[/yellow]'
+                '[yellow]TUI is unavailable (missing textual package). '
+                'Falling back to CLI.[/yellow]'
             )
         return DEFAULT_UI_BACKEND
     return requested
@@ -83,9 +83,9 @@ def run_streaming(
         )
     except RuntimeError:
         requested = normalize_ui_backend(ui_backend)
-        if requested == "textual":
+        if requested == "tui":
             console.print(
-                "[yellow]Textual TUI failed at runtime. Falling back to Rich for this request.[/yellow]"
+                "[yellow]TUI failed at runtime. Falling back to CLI for this request.[/yellow]"
             )
             return RichStreamingBackend().run_streaming(
                 agent=agent,

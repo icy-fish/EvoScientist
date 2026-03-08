@@ -9,7 +9,7 @@ def test_cmd_interactive_dispatches_to_textual(monkeypatch):
     def _fake_resolve_ui_backend(value, *, warn_fallback=False):  # noqa: ANN001
         captured["resolved_input"] = value
         captured["warn_fallback"] = warn_fallback
-        return "textual"
+        return "tui"
 
     def _fake_run_textual_interactive(**kwargs):  # noqa: ANN003
         captured["kwargs"] = kwargs
@@ -33,10 +33,10 @@ def test_cmd_interactive_dispatches_to_textual(monkeypatch):
         provider="demo-provider",
         run_name="demo-run",
         thread_id="thread-1",
-        ui_backend="textual",
+        ui_backend="tui",
     )
 
-    assert captured["resolved_input"] == "textual"
+    assert captured["resolved_input"] == "tui"
     assert captured["warn_fallback"] is True
 
     kwargs = captured["kwargs"]

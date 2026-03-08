@@ -81,7 +81,7 @@ class EvoScientistConfig:
 
     # UI Settings
     show_thinking: bool = True
-    ui_backend: Literal["rich", "textual"] = "rich"
+    ui_backend: Literal["cli", "tui"] = "tui"
 
     # Channel Settings
     channel_enabled: str = ""  # "imessage" | "telegram" | "discord" | "slack" | "wechat" | "dingtalk" | "feishu" | "email" | "qq" | "signal" | "" (comma-separated for multiple)

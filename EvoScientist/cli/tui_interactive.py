@@ -1924,7 +1924,7 @@ def run_textual_interactive(
                     mode=mode,
                     model=model,
                     provider=provider,
-                    ui_backend="textual",
+                    ui_backend="tui",
                     channels=channels_info,
                 )
             )
