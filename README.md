@@ -63,6 +63,34 @@ Moving beyond traditional human-in-the-loop systems, EvoScientist adopts a human
   </tr>
 </table>
 
+<h3>🏆 Awards & Recognition</h3>
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src=".github/assets/ICAIS_awards.JPG" width="100%" alt="ICAIS 2025 Awards"/>
+      <br />
+      <sub><b>Best Paper & AI Reviewer's Appraisal Award</b></sub>
+      <br />
+      <sub>ICAIS 2025 · AI Scientist Track · 6/6 Accepted</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/assets/ICAIS_best_paper.png" width="100%" alt="Best Paper"/>
+      <br />
+      <sub><b>Best Paper — ICAIS 2025</b></sub>
+      <br />
+      <sub>Adaptive Evidential Meta-Learning with Hyper-Conditioned Priors</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src=".github/assets/deepresearch_bench_2.JPG" width="100%" alt="DeepResearch Bench II #1"/>
+      <br />
+      <sub><b>#1 on DeepResearch Bench II</b></sub>
+      <br />
+      <sub>Ranked first at time of submission</sub>
+    </td>
+  </tr>
+</table>
+
 ## ✨ Features
 - **🤖 Multi-Agent Team** — 6 sub-agents (plan, research, code, debug, analyze, write) working in concert.
 - **🧠 Persistent Memory** — Context, preferences, and findings survive across sessions.
