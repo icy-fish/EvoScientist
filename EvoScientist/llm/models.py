@@ -159,14 +159,13 @@ def _apply_auto_config(
     if provider == "anthropic" and "thinking" not in kwargs:
         base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
         _is_proxy = "127.0.0.1" in base_url or "localhost" in base_url
-        if model_id.endswith("4-6"):
-            if _is_proxy:
-                # ccproxy manages thinking internally; don't set it here
-                # to avoid 422 errors with thinking content blocks in history
-                pass
-            else:
-                kwargs["thinking"] = {"type": "adaptive"}
-                kwargs.setdefault("effort", "max")
+        if _is_proxy:
+            # ccproxy manages thinking internally; don't set it here
+            # to avoid 422 errors with thinking content blocks in history
+            pass
+        elif model_id.endswith("4-6"):
+            kwargs["thinking"] = {"type": "adaptive"}
+            kwargs.setdefault("effort", "max")
         else:
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
 

@@ -440,9 +440,10 @@ class TestThirdPartyRouting:
 
 class TestAutoConfig:
     @patch("EvoScientist.llm.models.init_chat_model")
-    def test_anthropic_4_5_thinking(self, mock_init):
+    def test_anthropic_4_5_thinking(self, mock_init, monkeypatch):
         """Anthropic 4-5 models get enabled thinking with budget."""
         mock_init.return_value = "mock_model"
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
 
         get_chat_model("claude-sonnet-4-5")
 
@@ -473,6 +474,18 @@ class TestAutoConfig:
         call_kwargs = mock_init.call_args[1]
         assert "thinking" not in call_kwargs
         assert "effort" not in call_kwargs
+
+    @patch("EvoScientist.llm.models.init_chat_model")
+    def test_anthropic_4_5_proxy_no_thinking(self, mock_init, monkeypatch):
+        """Anthropic 4-5 models via proxy also skip thinking."""
+        mock_init.return_value = "mock_model"
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:8000")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "ccproxy-oauth")
+
+        get_chat_model("claude-sonnet-4-5")
+
+        call_kwargs = mock_init.call_args[1]
+        assert "thinking" not in call_kwargs
 
     @patch("EvoScientist.llm.models.init_chat_model")
     def test_anthropic_4_6_no_proxy_no_downgrade(self, mock_init, monkeypatch):
