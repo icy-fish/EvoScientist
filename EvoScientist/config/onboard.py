@@ -514,8 +514,8 @@ def _step_provider(config: EvoScientistConfig) -> str:
         Selected provider name.
     """
     choices = [
-        Choice(title="Anthropic (Claude models)", value="anthropic"),
-        Choice(title="OpenAI (GPT models)", value="openai"),
+        Choice(title="Anthropic (Claude models — API / OAuth)", value="anthropic"),
+        Choice(title="OpenAI (GPT models — API / OAuth)", value="openai"),
         Choice(title="Google GenAI (Gemini models)", value="google-genai"),
         Choice(title="NVIDIA (third party — limited free requests)", value="nvidia"),
         Choice(
