@@ -165,8 +165,8 @@ def start_ccproxy(port: int) -> subprocess.Popen:
         stderr=subprocess.DEVNULL,
     )
 
-    # Wait for health
-    deadline = time.monotonic() + 10
+    # Wait for health (ccproxy can take up to ~11s on first start)
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if proc.poll() is not None:
             raise RuntimeError(
@@ -182,7 +182,7 @@ def start_ccproxy(port: int) -> subprocess.Popen:
         proc.wait(timeout=3)
     except subprocess.TimeoutExpired:
         proc.kill()
-    raise RuntimeError("ccproxy did not become healthy within 10 seconds")
+    raise RuntimeError("ccproxy did not become healthy within 30 seconds")
 
 
 def stop_ccproxy(proc: subprocess.Popen | None) -> None:

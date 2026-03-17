@@ -144,7 +144,7 @@ class TestStartCcproxy:
         proc.poll.return_value = None
         mock_popen.return_value = proc
         # Simulate time passing beyond deadline
-        mock_time.monotonic.side_effect = [0, 0, 11]
+        mock_time.monotonic.side_effect = [0, 0, 31]
         mock_time.sleep = MagicMock()
 
         with pytest.raises(RuntimeError, match="did not become healthy"):
