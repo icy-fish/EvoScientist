@@ -195,6 +195,9 @@ class EvoScientistConfig:
     # DM access control policy
     dm_policy: str = "allowlist"
 
+    # ccproxy
+    ccproxy_port: int = 8000
+
 
 # =============================================================================
 # Config file operations
@@ -357,6 +360,7 @@ _ENV_MAPPINGS = {
     "default_mode": "EVOSCIENTIST_DEFAULT_MODE",
     "default_workdir": "EVOSCIENTIST_WORKSPACE_DIR",
     "ui_backend": "EVOSCIENTIST_UI_BACKEND",
+    "ccproxy_port": "EVOSCIENTIST_CCPROXY_PORT",
 }
 
 
