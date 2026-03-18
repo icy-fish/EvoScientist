@@ -285,6 +285,7 @@ def run_textual_interactive(
         """
         BINDINGS = [
             Binding("ctrl+c", "request_quit", "Quit", show=False),
+            Binding("tab", "tab_complete", show=False, priority=True),
             Binding("up", "edit_queued", show=False, priority=True),
             Binding("down", "down_delegate", show=False, priority=True),
             Binding("escape", "cancel_queued", show=False, priority=True),
@@ -1501,12 +1502,27 @@ def run_textual_interactive(
                     focused.action_move_down()
                     return
 
+        def action_tab_complete(self) -> None:
+            """Handle TAB: cycle completions when visible, otherwise no-op.
+
+            Registered as a priority binding so it intercepts before Textual's
+            default focus-next behaviour, which would steal focus from the input
+            and lose the cursor.
+            """
+            comp_widget = self.query_one("#completions", Static)
+            if not (comp_widget.display and self._comp_items):
+                # No completions active — keep focus on the prompt.
+                self.query_one("#prompt", Input).focus()
+                return
+            self._comp_index = (self._comp_index + 1) % len(self._comp_items)
+            self._apply_selected_completion()
+
         def on_key(self, event: Any) -> None:
             comp_widget = self.query_one("#completions", Static)
             if not (comp_widget.display and self._comp_items):
                 return
 
-            if event.key in ("tab", "down"):
+            if event.key == "down":
                 event.prevent_default()
                 event.stop()
                 self._comp_index = (self._comp_index + 1) % len(self._comp_items)
