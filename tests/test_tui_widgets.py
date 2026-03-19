@@ -510,5 +510,327 @@ class TestClipboardPaste(unittest.TestCase):
             assert result is None or isinstance(result, str)
 
 
+@unittest.skipUnless(_has_textual, "textual not installed")
+class TestCompletionLogic(unittest.TestCase):
+    """Unit tests for slash-command completion and TAB-key handling.
+
+    The completion methods live on EvoTextualInteractiveApp but require a
+    running Textual pilot to instantiate normally.  We use a lightweight
+    stub that reimplements only the state fields and wires query_one() to
+    return fake widget objects, letting us exercise the pure logic without
+    starting the full TUI.
+    """
+
+    # ------------------------------------------------------------------
+    # Stub infrastructure
+    # ------------------------------------------------------------------
+
+    def _make_app(self, comp_items=None, comp_index=-1):
+        """Return a stub app-like object with completion state."""
+        from rich.text import Text
+
+        # Fake Input widget -------------------------------------------------
+        class _FakeInput:
+            def __init__(self):
+                self.value = ""
+                self.cursor_position = 0
+
+            def focus(self):
+                self._focused = True
+
+        # Fake Static widget ------------------------------------------------
+        class _FakeStatic:
+            def __init__(self):
+                self.display = False
+                self._content = None
+
+            def update(self, content):
+                self._content = content
+
+        fake_input = _FakeInput()
+        fake_completions = _FakeStatic()
+
+        # Widget registry -----------------------------------------------
+        _widgets = {
+            ("#prompt", None): fake_input,
+            ("#completions", None): fake_completions,
+        }
+
+        from EvoScientist.commands import manager as cmd_manager
+
+        _slash_commands = cmd_manager.list_commands()
+
+        # Build stub --------------------------------------------------------
+        class _StubApp:
+            """Minimal stub that shares the real completion method bodies."""
+
+            def __init__(self):
+                self._comp_items: list = list(comp_items or [])
+                self._comp_index: int = comp_index
+                # Expose fakes for assertions
+                self._fake_input = fake_input
+                self._fake_completions = fake_completions
+                self._SLASH_COMMANDS = _slash_commands
+
+            def query_one(self, selector, widget_type=None):
+                # Match by selector string; widget_type is ignored in stub
+                if "prompt" in selector:
+                    return fake_input
+                if "completions" in selector:
+                    return fake_completions
+                raise KeyError(f"Unknown selector: {selector!r}")
+
+            # ---- copy real method bodies verbatim ----
+
+            def action_tab_complete(self):
+                comp_widget = self.query_one("#completions")
+                if not (comp_widget.display and self._comp_items):
+                    self.query_one("#prompt").focus()
+                    return
+                self._comp_index = (self._comp_index + 1) % len(self._comp_items)
+                self._apply_selected_completion()
+
+            def _apply_selected_completion(self):
+                selected_cmd = self._comp_items[self._comp_index][0]
+                prompt = self.query_one("#prompt")
+                prompt.value = selected_cmd + " "
+                prompt.cursor_position = len(prompt.value)
+                self._render_completions()
+
+            def _hide_completions(self):
+                self._comp_items = []
+                self._comp_index = -1
+                comp_widget = self.query_one("#completions")
+                comp_widget.display = False
+
+            def _render_completions(self):
+                comp_widget = self.query_one("#completions")
+                comp_text = Text()
+                for i, (cmd, desc) in enumerate(self._comp_items):
+                    if i == self._comp_index:
+                        comp_text.append("\u25b8 ", style="bold")
+                        comp_text.append(f"{cmd:<22}", style="bold")
+                        comp_text.append(desc, style="bold")
+                    else:
+                        comp_text.append("  ", style="#888888")
+                        comp_text.append(f"{cmd:<22}", style="#888888")
+                        comp_text.append(desc, style="#888888")
+                    if i < len(self._comp_items) - 1:
+                        comp_text.append("\n")
+                comp_widget.update(comp_text)
+
+            def on_input_changed(self, text: str):
+                """Simplified version matching the real on_input_changed logic."""
+                comp_widget = self.query_one("#completions")
+                if text.startswith("/"):
+                    prefix = text.lower()
+                    matches = [
+                        (cmd, desc)
+                        for cmd, desc in self._SLASH_COMMANDS
+                        if cmd.startswith(prefix)
+                    ]
+                    if len(matches) == 1 and matches[0][0] == prefix:
+                        self._hide_completions()
+                        return
+                    if matches:
+                        self._comp_items = matches
+                        self._comp_index = -1
+                        self._render_completions()
+                        comp_widget.display = True
+                        return
+                self._hide_completions()
+
+            def on_key(self, key: str):
+                """Simplified version matching the real on_key logic.
+
+                Up/down are handled by priority bindings, not on_key.
+                Only enter needs on_key handling.
+                """
+                comp_widget = self.query_one("#completions")
+                if not (comp_widget.display and self._comp_items):
+                    return False  # did nothing
+                if key == "enter" and self._comp_index >= 0:
+                    self._hide_completions()
+                    return True
+                return False
+
+        return _StubApp()
+
+    # ------------------------------------------------------------------
+    # action_tab_complete
+    # ------------------------------------------------------------------
+
+    def test_tab_complete_no_completions_refocuses_prompt(self):
+        """TAB with no active completions should refocus the prompt."""
+        app = self._make_app(comp_items=[])
+        app._fake_completions.display = False
+        app.action_tab_complete()
+        assert getattr(app._fake_input, "_focused", False) is True
+
+    def test_tab_complete_cycles_forward(self):
+        """TAB with completions visible should advance the selection index."""
+        items = [("/resume", "desc1"), ("/run", "desc2"), ("/reset", "desc3")]
+        app = self._make_app(comp_items=items, comp_index=-1)
+        app._fake_completions.display = True
+
+        app.action_tab_complete()
+        assert app._comp_index == 0
+        assert app._fake_input.value == "/resume "
+
+    def test_tab_complete_wraps_around(self):
+        """TAB past the last item should wrap back to index 0."""
+        items = [("/resume", "d1"), ("/run", "d2")]
+        app = self._make_app(comp_items=items, comp_index=1)  # last item
+        app._fake_completions.display = True
+
+        app.action_tab_complete()
+        assert app._comp_index == 0
+        assert app._fake_input.value == "/resume "
+
+    def test_tab_complete_updates_cursor_position(self):
+        """TAB should position the cursor at the end of the completed text."""
+        items = [("/skills", "List installed skills")]
+        app = self._make_app(comp_items=items, comp_index=-1)
+        app._fake_completions.display = True
+
+        app.action_tab_complete()
+        expected = "/skills "
+        assert app._fake_input.value == expected
+        assert app._fake_input.cursor_position == len(expected)
+
+    # ------------------------------------------------------------------
+    # _apply_selected_completion
+    # ------------------------------------------------------------------
+
+    def test_apply_selected_completion(self):
+        items = [("/new", "Start new"), ("/next", "Next")]
+        app = self._make_app(comp_items=items, comp_index=1)
+        app._apply_selected_completion()
+        assert app._fake_input.value == "/next "
+        assert app._fake_input.cursor_position == len("/next ")
+
+    # ------------------------------------------------------------------
+    # _hide_completions
+    # ------------------------------------------------------------------
+
+    def test_hide_completions_clears_state(self):
+        items = [("/resume", "d")]
+        app = self._make_app(comp_items=items, comp_index=0)
+        app._fake_completions.display = True
+
+        app._hide_completions()
+
+        assert app._comp_items == []
+        assert app._comp_index == -1
+        assert app._fake_completions.display is False
+
+    # ------------------------------------------------------------------
+    # _render_completions
+    # ------------------------------------------------------------------
+
+    def test_render_completions_produces_text(self):
+        """_render_completions should call update() with a rich Text object."""
+        from rich.text import Text
+
+        items = [("/resume", "Resume session"), ("/run", "Run")]
+        app = self._make_app(comp_items=items, comp_index=0)
+        app._render_completions()
+
+        result = app._fake_completions._content
+        assert isinstance(result, Text)
+        plain = result.plain
+        assert "/resume" in plain
+        assert "/run" in plain
+
+    def test_render_completions_highlights_selected(self):
+        """The selected item should have a bold arrow marker."""
+        from rich.text import Text
+
+        items = [("/help", "Help"), ("/hitl", "HITL")]
+        app = self._make_app(comp_items=items, comp_index=1)
+        app._render_completions()
+
+        result: Text = app._fake_completions._content
+        # Collect spans for bold segments
+        bold_spans = [
+            result.plain[s.start : s.end]
+            for s in result._spans
+            if "bold" in str(s.style)
+        ]
+        # The arrow marker "▸" should appear in a bold span
+        arrow_in_bold = any("▸" in seg for seg in bold_spans)
+        assert arrow_in_bold, f"No bold arrow found. Spans: {bold_spans}"
+
+    # ------------------------------------------------------------------
+    # on_input_changed
+    # ------------------------------------------------------------------
+
+    def test_input_changed_slash_shows_completions(self):
+        """/re prefix should show matching commands."""
+        app = self._make_app()
+        app.on_input_changed("/re")
+        assert app._fake_completions.display is True
+        assert len(app._comp_items) > 0
+        assert all(cmd.startswith("/re") for cmd, _ in app._comp_items)
+
+    def test_input_changed_exact_match_hides_completions(self):
+        """An exact match for a command should hide completions."""
+        app = self._make_app()
+        # /help is the only command starting with /help
+        app.on_input_changed("/help")
+        assert app._fake_completions.display is False
+
+    def test_input_changed_non_slash_hides_completions(self):
+        """Regular text (no leading slash) should hide completions."""
+        items = [("/resume", "d")]
+        app = self._make_app(comp_items=items)
+        app._fake_completions.display = True
+
+        app.on_input_changed("hello world")
+        assert app._fake_completions.display is False
+
+    def test_input_changed_no_match_hides_completions(self):
+        """A /prefix that matches nothing should hide completions."""
+        app = self._make_app()
+        app._fake_completions.display = True
+
+        app.on_input_changed("/zzznomatch")
+        assert app._fake_completions.display is False
+
+    # ------------------------------------------------------------------
+    # on_key  (enter only — up/down handled by priority bindings)
+    # ------------------------------------------------------------------
+
+    def test_on_key_enter_hides_completions_when_selected(self):
+        items = [("/resume", "d1")]
+        app = self._make_app(comp_items=items, comp_index=0)
+        app._fake_completions.display = True
+
+        handled = app.on_key("enter")
+        assert handled is True
+        assert app._fake_completions.display is False
+        assert app._comp_items == []
+
+    def test_on_key_enter_ignored_when_nothing_selected(self):
+        """Enter with comp_index == -1 should not hide completions."""
+        items = [("/resume", "d1")]
+        app = self._make_app(comp_items=items, comp_index=-1)
+        app._fake_completions.display = True
+
+        handled = app.on_key("enter")
+        assert handled is False
+        assert app._fake_completions.display is True  # unchanged
+
+    def test_on_key_noop_when_completions_hidden(self):
+        """Key events should be ignored when completions are not visible."""
+        items = [("/resume", "d1")]
+        app = self._make_app(comp_items=items, comp_index=0)
+        app._fake_completions.display = False  # hidden
+
+        handled = app.on_key("down")
+        assert handled is False
+        assert app._comp_index == 0  # unchanged
+
+
 if __name__ == "__main__":
     unittest.main()

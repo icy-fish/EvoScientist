@@ -270,6 +270,7 @@ def run_textual_interactive(
         BINDINGS: ClassVar[list[Binding]] = [
             Binding("ctrl+c", "request_quit", "Quit", show=False),
             Binding("ctrl+v", "paste_clipboard", "Paste", show=False),
+            Binding("tab", "tab_complete", show=False, priority=True),
             Binding("up", "edit_queued", show=False, priority=True),
             Binding("down", "down_delegate", show=False, priority=True),
             Binding("escape", "cancel_queued", show=False, priority=True),
@@ -1710,22 +1711,29 @@ def run_textual_interactive(
             prompt.value = new_value
             prompt.cursor_position = pos + len(text)
 
+        def action_tab_complete(self) -> None:
+            """Handle TAB: cycle completions when visible, otherwise no-op.
+
+            Registered as a priority binding so it intercepts before Textual's
+            default focus-next behaviour, which would steal focus from the input
+            and lose the cursor.
+            """
+            comp_widget = self.query_one("#completions", Static)
+            if not (comp_widget.display and self._comp_items):
+                # No completions active — keep focus on the prompt.
+                self.query_one("#prompt", Input).focus()
+                return
+            self._comp_index = (self._comp_index + 1) % len(self._comp_items)
+            self._apply_selected_completion()
+
         def on_key(self, event: Any) -> None:
             comp_widget = self.query_one("#completions", Static)
             if not (comp_widget.display and self._comp_items):
                 return
 
-            if event.key in ("tab", "down"):
-                event.prevent_default()
-                event.stop()
-                self._comp_index = (self._comp_index + 1) % len(self._comp_items)
-                self._render_completions()
-            elif event.key == "up":
-                event.prevent_default()
-                event.stop()
-                self._comp_index = (self._comp_index - 1) % len(self._comp_items)
-                self._render_completions()
-            elif event.key == "enter" and self._comp_index >= 0:
+            # Up/down are handled by priority bindings (action_edit_queued /
+            # action_down_delegate) — only enter needs on_key handling.
+            if event.key == "enter" and self._comp_index >= 0:
                 event.prevent_default()
                 event.stop()
                 self._apply_selected_completion()
